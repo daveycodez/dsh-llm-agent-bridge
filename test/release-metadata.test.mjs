@@ -48,6 +48,7 @@ test("CI and release build clean official DSH packages before plugin verificatio
   for (const workflowUrl of workflowUrls) {
     const workflow = await readFile(workflowUrl, "utf8");
     assert.match(workflow, /pnpm\/action-setup@v6/);
+    assert.match(workflow, /node-version: 22\.23\.2/);
     const installIndex = workflow.indexOf("pnpm install --ignore-scripts --frozen-lockfile");
     const buildIndex = workflow.indexOf("pnpm run build:lib");
     const verifyIndex = workflow.indexOf("npm run verify");
