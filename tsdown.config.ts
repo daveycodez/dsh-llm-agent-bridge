@@ -1,9 +1,11 @@
 import { readFile } from 'node:fs/promises'
-import { basename, dirname, resolve } from 'node:path'
+import { basename, dirname, relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
 
 const ID = '@relay/dsh-plugin-claude'
+const ROOT = dirname(fileURLToPath(import.meta.url))
 const CSS_MODULE = '\0relay-css-module:'
 const GLOBAL_CSS = '\0relay-global-css:'
 const VIRTUAL_SUFFIX = '.mjs'
@@ -92,13 +94,15 @@ const clientConfig: UserConfig = {
       this.addWatchFile(file)
       const source = await readFile(file)
       const output = transform({
-        filename: file,
+        filename: stableFilename(file),
         code: source,
         cssModules: { pattern: '[hash]_[local]' },
         minify: true,
       })
       const classMap: Record<string, string> = {}
-      for (const [local, value] of Object.entries(output.exports ?? {})) classMap[local] = value.name
+      for (const [local, value] of Object.entries(output.exports ?? {}).sort(([left], [right]) => left.localeCompare(right))) {
+        classMap[local] = value.name
+      }
       return injectionModule(file, output.code.toString(), classMap)
     },
   }, {
@@ -114,7 +118,7 @@ const clientConfig: UserConfig = {
       const file = virtualId.slice(GLOBAL_CSS.length, -VIRTUAL_SUFFIX.length)
       this.addWatchFile(file)
       const source = await readFile(file)
-      const output = transform({ filename: file, code: source, minify: true })
+      const output = transform({ filename: stableFilename(file), code: source, minify: true })
       return injectionModule(file, output.code.toString())
     },
   }],
@@ -127,3 +131,7 @@ const clientConfig: UserConfig = {
 }
 
 export default [hostConfig, clientConfig]
+
+function stableFilename(file: string): string {
+  return relative(ROOT, file).split('\\').join('/')
+}

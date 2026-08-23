@@ -21,6 +21,13 @@ test("Claude plugin remains independently installable", async () => {
   }
 });
 
+test("tracked build artifacts contain no checkout-specific path", async () => {
+  for (const entry of await readdir(join(root, "lib"), { withFileTypes: true })) {
+    if (!entry.isFile() || (!entry.name.endsWith(".js") && !entry.name.endsWith(".map"))) continue;
+    assert.doesNotMatch(await readFile(join(root, "lib", entry.name), "utf8"), new RegExp(escapeRegExp(root)));
+  }
+});
+
 async function sourceFiles(directory) {
   const files = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -30,4 +37,8 @@ async function sourceFiles(directory) {
     else if ([".js", ".mjs", ".ts", ".tsx"].includes(extname(entry.name))) files.push(path);
   }
   return files;
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
