@@ -2,6 +2,8 @@
 
 [English](README.md) | 中文
 
+**npm 包名：** [`relay-dsh-plugin-claude`](https://www.npmjs.com/package/relay-dsh-plugin-claude)
+
 `relay-dsh-plugin-claude` 为官方
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）Web
 界面增加 **Claude Code 对话后端**。安装后，DSH 的新建会话模式菜单中会出现
@@ -53,27 +55,56 @@ claude
 
 认证信息仍由 Claude Code 原有的本地机制管理，本插件不会收集认证信息。
 
-### 2. 从 npm 安装
+### 2. 选择安装来源并安装
 
-修改 Profile 插件前，请先停止正在运行的 DSH Web，然后执行：
+修改 Profile 插件前，请先停止正在运行的 DSH Web，然后从以下来源中选择
+一种。
+
+#### npm 正式版（推荐）
+
+本插件发布到 npm 的正式包名是
+[`relay-dsh-plugin-claude`](https://www.npmjs.com/package/relay-dsh-plugin-claude)。
+使用 `@latest` 安装当前稳定版本：
 
 ```bash
-npx @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile web add relay-dsh-plugin-claude
+npx @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile web add relay-dsh-plugin-claude@latest
 ```
 
-官方 DSH CLI 会在需要时初始化 `web` Profile，通过 `pnpm` 安装 npm 包和
+本文更新时，`latest` 指向稳定版 `0.1.0`。最新版本请以链接中的 npm 页面
+为准。
+
+#### npm 预发布版
+
+使用 `@next` 安装已经通过本仓库 CI 发布流程和官方 DSH 兼容性测试的最新
+候选版本：
+
+```bash
+npx @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile web add relay-dsh-plugin-claude@next
+```
+
+本文更新时，`next` 指向 `0.1.1-rc.2`。
+
+#### GitHub 开发版
+
+如需测试尚未发布的修改，可以直接安装当前 `main` 分支：
+
+```bash
+npx @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile web add github:yangbobo2021/relay-dsh-plugin-claude#main
+```
+
+`main` 会持续变化。如需可复现的 GitHub 安装，请固定 Tag 或完整 Commit
+SHA。例如：
+
+```bash
+npx @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile web add github:yangbobo2021/relay-dsh-plugin-claude#v0.1.1-rc.2
+```
+
+官方 DSH CLI 会在需要时初始化 `web` Profile，通过 `pnpm` 安装所选软件包和
 Claude Agent SDK 依赖，并将插件加入 Bundle 配置。用户不需要下载 Relay
-仓库。当前 npm 版本为 `0.1.0`。首次安装还会下载 Claude Agent SDK 的平台相关软件包，可能需要
-更长时间；请等待 pnpm 最终显示 `Done` 或明确的错误信息。
-
-如果已经安装了持久可用的 `dsh` 命令，也可以使用：
-
-```bash
-dsh plugin --profile web add relay-dsh-plugin-claude
-```
-
-如需测试尚未发布的提交，可将包名替换为
-`github:yangbobo2021/relay-dsh-plugin-claude`。
+仓库。首次安装还会下载 Claude Agent SDK 的平台相关软件包，可能需要更长
+时间；请等待 pnpm 最终显示 `Done` 或明确错误。如果已经安装了持久可用的
+`dsh` 命令，可以将上述任一命令开头的
+`npx @deepseek-ai/dsh@0.1.1-rc.2` 替换为 `dsh`。
 
 ### 3. 启动或重启 DSH Web
 

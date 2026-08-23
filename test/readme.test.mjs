@@ -41,10 +41,15 @@ test('README screenshot and bilingual preset ship with the package', () => {
   assert.ok(manifest.files.includes('docs/images'))
 })
 
-test('README preserves standalone scope and npm distribution status', () => {
+test('README preserves standalone scope and every supported installation source', () => {
   assert.match(english, /independently installable/i)
   assert.match(english, /no runtime dependency on the\s+Relay application, Relay Events, or another Relay plugin/i)
-  assert.match(english, /current npm release is\s*`0\.1\.0`/i)
-  assert.match(chinese, /当前 npm 版本为 `0\.1\.0`/)
+  for (const readme of [english, chinese]) {
+    assert.match(readme, /https:\/\/www\.npmjs\.com\/package\/relay-dsh-plugin-claude/)
+    assert.match(readme, /relay-dsh-plugin-claude@latest/)
+    assert.match(readme, /relay-dsh-plugin-claude@next/)
+    assert.match(readme, /github:yangbobo2021\/relay-dsh-plugin-claude#main/)
+    assert.match(readme, /github:yangbobo2021\/relay-dsh-plugin-claude#v0\.1\.1-rc\.2/)
+  }
   assert.match(english, /DSH is currently a developer preview/)
 })
