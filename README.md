@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-`@relay/dsh-plugin-claude` adds **Claude Code as a conversation backend** to the
+`relay-dsh-plugin-claude` adds **Claude Code as a conversation backend** to the
 official [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 (DSH) Web UI. After installation, **Claude Code** appears in DSH's New Session
 mode menu. One DSH Session is bound to one Claude Agent SDK session.
@@ -57,28 +57,29 @@ claude
 Credentials stay under Claude Code's normal local authentication mechanism; this
 plugin does not collect them.
 
-### 2. Install from GitHub
+### 2. Install from npm
 
 Stop a running DSH Web process before changing Profile bundles. Then run:
 
 ```bash
-npx @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile web add github:yangbobo2021/relay-dsh-plugin-claude
+npx @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile web add relay-dsh-plugin-claude
 ```
 
 The official DSH CLI initializes the `web` Profile if it does not exist, asks
-`pnpm` to install the repository and Claude Agent SDK dependencies, and adds the
-plugin's bundle layer. No Relay checkout is required. The first installation can
+`pnpm` to install the npm package and Claude Agent SDK dependencies, and adds the
+plugin's bundle layer. No Relay checkout is required. The current npm release is
+`0.1.0`. The first installation can
 take longer while platform-specific Claude Agent SDK packages are downloaded;
 wait for pnpm's final `Done` message or an explicit error.
 
 If you already installed the `dsh` command, the shorter equivalent is:
 
 ```bash
-dsh plugin --profile web add github:yangbobo2021/relay-dsh-plugin-claude
+dsh plugin --profile web add relay-dsh-plugin-claude
 ```
 
-The npm package name is `@relay/dsh-plugin-claude`, but it is not published yet.
-Use the GitHub command above until an npm release is listed in this README.
+To test an unreleased commit instead, replace the package name with
+`github:yangbobo2021/relay-dsh-plugin-claude`.
 
 ### 3. Start or restart DSH Web
 
@@ -141,13 +142,13 @@ Stop DSH Web before changing the bundle, then restart it afterward.
 
 ```bash
 # Show why the plugin is installed
-dsh plugin --profile web why @relay/dsh-plugin-claude
+dsh plugin --profile web why relay-dsh-plugin-claude
 
-# Update the GitHub dependency
-dsh plugin --profile web update @relay/dsh-plugin-claude
+# Update the npm dependency
+dsh plugin --profile web update relay-dsh-plugin-claude
 
 # Remove it
-dsh plugin --profile web remove @relay/dsh-plugin-claude
+dsh plugin --profile web remove relay-dsh-plugin-claude
 ```
 
 Use the `npx @deepseek-ai/dsh@0.1.1-rc.2` prefix instead of `dsh` when you do not
@@ -158,7 +159,7 @@ have a persistent DSH command.
 ### Claude Code is missing from the mode menu
 
 Restart DSH Web. Then run `dsh plugin --profile web why
-@relay/dsh-plugin-claude`. If pnpm cannot find the package, repeat the GitHub
+relay-dsh-plugin-claude`. If pnpm cannot find the package, repeat the npm
 installation command and read its final error.
 
 ### The first message reports an authentication error

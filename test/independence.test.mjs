@@ -8,9 +8,9 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
 test("Claude plugin remains independently installable", async () => {
   const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
-  assert.equal(manifest.name, "@relay/dsh-plugin-claude");
+  assert.equal(manifest.name, "relay-dsh-plugin-claude");
   for (const field of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
-    const relayDependencies = Object.keys(manifest[field] ?? {}).filter((name) => name.startsWith("@relay/"));
+    const relayDependencies = Object.keys(manifest[field] ?? {}).filter(isRelayPackage);
     assert.deepEqual(relayDependencies, [], `${field} must not depend on another Relay package`);
   }
 
@@ -37,6 +37,10 @@ async function sourceFiles(directory) {
     else if ([".js", ".mjs", ".ts", ".tsx"].includes(extname(entry.name))) files.push(path);
   }
   return files;
+}
+
+function isRelayPackage(name) {
+  return name.startsWith("@relay/") || name.startsWith("relay-dsh-plugin-");
 }
 
 function escapeRegExp(value) {

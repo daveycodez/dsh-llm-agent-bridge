@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: npm-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          registry-url: https://registry.npmjs.org
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - name: Use an OIDC-capable npm CLI
+        run: npm install --global "npm@^11.5.1"
+      - name: Check out official DSH
+        uses: actions/checkout@v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: b150a551b8d465e31e418e1b2eaf5e79bbb7d28e
+          path: upstream/deepseek-harness
+      - run: pnpm install --ignore-scripts --frozen-lockfile
+        working-directory: upstream/deepseek-harness
+      - run: npm ci --ignore-scripts
+      - name: Validate release tag
+        id: release
+        run: node scripts/release-metadata.mjs
+      - name: Require the release commit on main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - name: Verify against official DSH
+        run: npm run verify
+        env:
+          DSH_ROOT: ${{ github.workspace }}/upstream/deepseek-harness
+      - name: Require reproducible tracked artifacts
+        run: git diff --exit-code -- lib
+      - run: npm pack --dry-run
+      - name: Check whether this version already exists
+        id: registry
+        shell: bash
+        run: |
+          package_name="$(node -p "require('./package.json').name")"
+          if npm view "${package_name}@${{ steps.release.outputs.version }}" version >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish to npm
+        if: steps.registry.outputs.exists != 'true'
+        run: npm publish --access public --tag "${{ steps.release.outputs.npm_tag }}"

@@ -1,5 +1,5 @@
 {
-  "name": "@relay/dsh-plugin-claude",
+  "name": "relay-dsh-plugin-claude",
   "version": "0.1.0",
   "description": "Claude Code integration plugin for DeepSeek Harness, providing native Claude conversations powered by the Claude Agent SDK, with model selection, approvals, questions, tools, and session continuation.",
   "type": "module",

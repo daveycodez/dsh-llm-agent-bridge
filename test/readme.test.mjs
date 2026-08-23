@@ -15,7 +15,7 @@ const manifest = JSON.parse(manifestText)
 test('English and Chinese READMEs form a complete newcomer path', () => {
   for (const readme of [english, chinese]) {
     assert.match(readme, /github:yangbobo2021\/relay-dsh-plugin-claude/)
-    assert.match(readme, /@relay\/dsh-plugin-claude/)
+    assert.match(readme, /relay-dsh-plugin-claude/)
     assert.match(readme, /0\.1\.1-rc\.2/)
     assert.match(readme, /b150a551/)
     assert.match(readme, /docs\/images\/dsh-new-session-backends\.jpg/)
@@ -41,10 +41,10 @@ test('README screenshot and bilingual preset ship with the package', () => {
   assert.ok(manifest.files.includes('docs/images'))
 })
 
-test('README preserves standalone scope and current distribution status', () => {
+test('README preserves standalone scope and npm distribution status', () => {
   assert.match(english, /independently installable/i)
   assert.match(english, /no runtime dependency on the\s+Relay application, Relay Events, or another Relay plugin/i)
-  assert.match(english, /it is not published yet/i)
-  assert.match(chinese, /目前尚未发布到 npm/)
+  assert.match(english, /current npm release is\s*`0\.1\.0`/i)
+  assert.match(chinese, /当前 npm 版本为 `0\.1\.0`/)
   assert.match(english, /DSH is currently a developer preview/)
 })
