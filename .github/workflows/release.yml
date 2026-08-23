@@ -17,10 +17,10 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22.14.0
           registry-url: https://registry.npmjs.org
@@ -30,12 +30,15 @@ jobs:
       - name: Use an OIDC-capable npm CLI
         run: npm install --global "npm@^11.5.1"
       - name: Check out official DSH
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: deepseek-ai/deepseek-harness
           ref: b150a551b8d465e31e418e1b2eaf5e79bbb7d28e
           path: upstream/deepseek-harness
       - run: pnpm install --ignore-scripts --frozen-lockfile
+        working-directory: upstream/deepseek-harness
+      - name: Build official DSH packages
+        run: pnpm run build:lib
         working-directory: upstream/deepseek-harness
       - run: npm ci --ignore-scripts
       - name: Validate release tag

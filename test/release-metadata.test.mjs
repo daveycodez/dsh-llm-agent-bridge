@@ -34,3 +34,21 @@ test("release workflow uses guarded tokenless npm publishing", async () => {
   assert.match(workflow, /npm publish --access public --tag/);
   assert.doesNotMatch(workflow, /NODE_AUTH_TOKEN|NPM_TOKEN/);
 });
+
+test("CI and release build clean official DSH packages before plugin verification", async () => {
+  const workflowUrls = [
+    new URL("../.github/workflows/ci.yml", import.meta.url),
+    new URL("../.github/workflows/release.yml", import.meta.url),
+  ];
+
+  for (const workflowUrl of workflowUrls) {
+    const workflow = await readFile(workflowUrl, "utf8");
+    const installIndex = workflow.indexOf("pnpm install --ignore-scripts --frozen-lockfile");
+    const buildIndex = workflow.indexOf("pnpm run build:lib");
+    const verifyIndex = workflow.indexOf("npm run verify");
+
+    assert.notEqual(installIndex, -1, `${workflowUrl.pathname} must install official DSH`);
+    assert.ok(buildIndex > installIndex, `${workflowUrl.pathname} must build DSH after install`);
+    assert.ok(verifyIndex > buildIndex, `${workflowUrl.pathname} must build DSH before verification`);
+  }
+});
