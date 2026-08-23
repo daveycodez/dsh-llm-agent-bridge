@@ -31,7 +31,11 @@ test("release workflow uses guarded tokenless npm publishing", async () => {
   assert.match(workflow, /node scripts\/release-metadata\.mjs/);
   assert.match(workflow, /git merge-base --is-ancestor/);
   assert.match(workflow, /b150a551b8d465e31e418e1b2eaf5e79bbb7d28e/);
-  assert.match(workflow, /npm publish --access public --tag/);
+  assert.match(workflow, /npm publish --provenance --access public --tag/);
+  assert.ok(
+    workflow.indexOf("npm install --global") > workflow.indexOf("Check whether this version already exists"),
+    "the OIDC npm upgrade must not affect DSH build or verification",
+  );
   assert.doesNotMatch(workflow, /NODE_AUTH_TOKEN|NPM_TOKEN/);
 });
 
