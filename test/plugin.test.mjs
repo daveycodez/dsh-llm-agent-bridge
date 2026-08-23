@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
 
-import { PluginHost } from "../../../packages/plugin-sdk/index.mjs";
+import { PluginHost } from "../internal/plugin-sdk.mjs";
 import { createClaudeExecutionPlugin } from "../plugin.mjs";
 
 test("Claude plugin exposes operation capabilities and closes its backend", async () => {

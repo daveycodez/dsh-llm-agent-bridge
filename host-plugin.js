@@ -1,11 +1,11 @@
 import { fileURLToPath } from "node:url";
-import { PluginHost } from "@relay/plugin-sdk";
+import { PluginHost } from "./internal/plugin-sdk.mjs";
 import { createClaudeExecutionPlugin } from "./plugin.mjs";
 import { createDshClaudePlugin } from "./dsh-plugin.js";
 import { installManagedPreset } from "./preset.js";
 export { installClaudeSessionEventType } from "./dsh-plugin.js";
 
-export const name = "relay-plugin-claude";
+export const name = "relay-dsh-plugin-claude";
 export const inject = ["agents", "llm", "sessions", "sessionPersistence", "tools", "typert", "webServer"];
 
 export async function apply(ctx, config = {}) {

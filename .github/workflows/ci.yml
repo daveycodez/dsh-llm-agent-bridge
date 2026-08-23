@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - name: Check out official DSH
+        uses: actions/checkout@v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: b150a551b8d465e31e418e1b2eaf5e79bbb7d28e
+          path: upstream/deepseek-harness
+      - run: pnpm install --ignore-scripts --frozen-lockfile
+        working-directory: upstream/deepseek-harness
+      - run: npm ci --ignore-scripts
+      - run: npm run verify
+        env:
+          DSH_ROOT: ${{ github.workspace }}/upstream/deepseek-harness
+      - run: npm pack --dry-run

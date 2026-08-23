@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { KNOWN_SESSION_EVENT_TYPES } from "@deepseek-ai/dsh-session";
-import { definePlugin } from "@relay/plugin-sdk";
+import { definePlugin } from "./internal/plugin-sdk.mjs";
 import { ClaudeDshAdapter, CLAUDE_ACTIVITY_EVENT, CLAUDE_PROVIDER } from "./claude-adapter.js";
 import { ClaudeLinkStore } from "./claude-link-store.js";
 import { handleClaudeSdkRequest } from "./claude-tools.js";

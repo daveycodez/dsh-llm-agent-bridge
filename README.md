@@ -1,6 +1,6 @@
 # Relay Claude Plugin
 
-`@relay/plugin-claude` adds a Claude Code conversation mode to DeepSeek Harness.
+`@relay/dsh-plugin-claude` adds a Claude Code conversation mode to DeepSeek Harness.
 One DSH Session owns one Claude Agent SDK session, including model and reasoning
 selection, approvals, questions, tool activity, interruption, and continuation.
 
@@ -14,14 +14,12 @@ runtime. This bridge requires the default SDK backend; explicit CLI fallback ref
 contributed tools instead of silently dropping them.
 
 ```bash
-dsh plugin --profile web add @relay/plugin-claude
+dsh plugin --profile web add @relay/dsh-plugin-claude
 ```
 
-Build and verify from Relay:
+Build and verify against an official DeepSeek Harness checkout:
 
 ```bash
-npm run prepare:dsh
-npm --workspace @relay/plugin-claude run typecheck
-npm --workspace @relay/plugin-claude run build
-npm run test:install:dsh-official
+DSH_ROOT=/path/to/deepseek-harness npm run verify
+npm pack
 ```

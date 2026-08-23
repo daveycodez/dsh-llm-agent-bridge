@@ -1,4 +1,4 @@
-import { definePlugin } from "@relay/plugin-sdk";
+import { definePlugin } from "./internal/plugin-sdk.mjs";
 import { ClaudeCliClient } from "./cli-client.mjs";
 import { ClaudeSdkClient } from "./sdk-client.mjs";
 import { ClaudeSessionRuntime } from "./session-runtime.mjs";
