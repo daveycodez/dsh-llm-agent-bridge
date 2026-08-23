@@ -43,6 +43,9 @@ export class ClaudeCliClient extends EventEmitter {
   }
 
   async sendMessage(sessionId, message = {}) {
+    if (Array.isArray(message.dshTools) && message.dshTools.length > 0) {
+      throw new Error("The Claude CLI backend cannot expose DSH tools; use the Claude Agent SDK backend");
+    }
     const session = this.sessions.get(sessionId) ?? (await this.resumeSession(sessionId, message));
     const turnId = randomUUID();
     const child = this.spawnTurn(session, turnId, message);

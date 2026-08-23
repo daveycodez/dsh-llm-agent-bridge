@@ -120,6 +120,59 @@ test("Claude SDK client maps Relay denial back to canUseTool", async () => {
   assert.deepEqual(permissionResult, { behavior: "deny", message: "No thanks" });
 });
 
+test("Claude SDK maps generic DSH schemas to an in-process MCP server", async () => {
+  let queryParams = null;
+  let serverOptions = null;
+  const calls = [];
+  const sdk = {
+    createSdkMcpServer(options) {
+      serverOptions = options;
+      return { type: "sdk", name: options.name };
+    },
+    tool(name, description, inputSchema, handler) {
+      return { name, description, inputSchema, handler };
+    },
+    query(params) {
+      queryParams = params;
+      return queryObject(async function* () {
+        yield { type: "result", session_id: params.options.sessionId, uuid: "u1", subtype: "success", is_error: false, result: "done" };
+      });
+    },
+  };
+  const client = new ClaudeSdkClient({ sdk });
+  await client.start();
+  const session = await client.createSession({ sessionId: "44444444-4444-4444-8444-444444444444" });
+  const activity = [];
+  client.on("activity", message => activity.push(message));
+  await client.sendMessage(session.id, {
+    text: "use the probe",
+    dshTools: [{
+      name: "cross_plugin_probe",
+      description: "Probe a separately installed DSH plugin.",
+      parameters: {
+        type: "object",
+        properties: { value: { type: "string" }, count: { type: "integer" } },
+        required: ["value"],
+      },
+    }],
+    async executeDshTool(input) {
+      calls.push(input);
+      return { isError: false, content: [{ type: "text", text: "probe complete" }] };
+    },
+  });
+  await untilTurnCompleted(activity);
+
+  assert.deepEqual(Object.keys(queryParams.options.mcpServers), ["dsh"]);
+  assert.deepEqual(queryParams.options.allowedTools, ["mcp__dsh__cross_plugin_probe"]);
+  assert.equal(serverOptions.tools[0].name, "cross_plugin_probe");
+  assert.equal(serverOptions.tools[0].inputSchema.value.isOptional(), false);
+  assert.equal(serverOptions.tools[0].inputSchema.count.isOptional(), true);
+  const result = await serverOptions.tools[0].handler({ value: "ok" }, { signal: new AbortController().signal });
+  assert.deepEqual(calls[0].arguments, { value: "ok" });
+  assert.equal(result.isError, false);
+  assert.deepEqual(result.content, [{ type: "text", text: "probe complete" }]);
+});
+
 test("Claude SDK client interrupts and aborts an in-progress query", async () => {
   let queryParams = null;
   let interrupted = 0;

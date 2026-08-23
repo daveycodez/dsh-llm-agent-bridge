@@ -1,0 +1,3 @@
+- insert:
+    - id: relay-claude-host
+      name: '@relay/plugin-claude'

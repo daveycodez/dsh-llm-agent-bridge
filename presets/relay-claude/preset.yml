@@ -1,0 +1,3 @@
+name: Claude Code
+description: 在 DSH 原生会话中运行并继续 Claude Code session。
+order: 3

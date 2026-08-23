@@ -1,0 +1,47 @@
+.activity {
+  width: min(100%, 960px);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.summary {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+}
+
+.summary :first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail {
+  margin: 4px 0 8px 28px;
+  overflow: hidden;
+  border-left: 1px solid var(--dsw-alias-border-l2);
+  padding-left: 12px;
+}
+
+.detail pre {
+  max-height: 320px;
+  margin: 0 0 8px;
+  overflow: auto;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-markdown-code-block-small);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.provenance {
+  margin-bottom: 8px;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

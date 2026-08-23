@@ -6,6 +6,15 @@ import test from "node:test";
 
 import { ClaudeCliClient } from "../cli-client.mjs";
 
+test("Claude CLI rejects DSH tools instead of silently omitting them", async () => {
+  const client = new ClaudeCliClient();
+  await client.createSession({ sessionId: "44444444-4444-4444-8444-444444444444" });
+  await assert.rejects(() => client.sendMessage("44444444-4444-4444-8444-444444444444", {
+    text: "use the tool",
+    dshTools: [{ name: "cross_plugin_probe", description: "probe", parameters: { type: "object" } }],
+  }), /cannot expose DSH tools/);
+});
+
 test("Claude CLI client uses session, settings, effort, and permission flags", async (context) => {
   const directory = await mkdtemp(join(tmpdir(), "relay-claude-cli-"));
   context.after(() => rm(directory, { recursive: true, force: true }));

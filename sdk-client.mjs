@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
+import { z } from "zod";
 
 const DEFAULT_MODELS = [
   { id: "sonnet", displayName: "Claude Sonnet", isDefault: true, defaultReasoningEffort: "medium", supportedReasoningEfforts: reasoningEfforts() },
@@ -123,6 +124,7 @@ export class ClaudeSdkClient extends EventEmitter {
       includePartialMessages: true,
       ...(session.created ? { resume: session.id } : { sessionId: session.id }),
       canUseTool: (toolName, input, options) => this.requestPermission(session.id, toolName, input, options),
+      ...dshMcpOptions(this.sdk, message.dshTools, message.executeDshTool, abortController.signal),
     };
   }
 
@@ -185,6 +187,60 @@ export class ClaudeSdkClient extends EventEmitter {
       },
     });
   }
+}
+
+function dshMcpOptions(sdk, schemas, execute, signal) {
+  if (!Array.isArray(schemas) || schemas.length === 0) return {};
+  if (typeof execute !== "function") throw new Error("Claude DSH tools require an execution callback");
+  if (typeof sdk.createSdkMcpServer !== "function" || typeof sdk.tool !== "function") {
+    throw new Error("This Claude Agent SDK does not support in-process DSH tools");
+  }
+  const tools = schemas.map(schema => sdk.tool(
+    schema.name,
+    schema.description,
+    jsonSchemaShape(schema.parameters),
+    async (args, extra = {}) => dshToolResult(await execute({
+      name: schema.name,
+      arguments: args,
+      callId: extra.toolUseID ?? extra.toolUseId ?? randomUUID(),
+      signal: extra.signal ?? signal,
+    })),
+  ));
+  return {
+    mcpServers: {
+      dsh: sdk.createSdkMcpServer({ name: "dsh", version: "1.0.0", tools, alwaysLoad: true }),
+    },
+    allowedTools: schemas.map(schema => `mcp__dsh__${schema.name}`),
+  };
+}
+
+function jsonSchemaShape(schema) {
+  if (!schema || schema.type !== "object" || typeof schema.properties !== "object" || schema.properties === null) {
+    if (schema?.type === "object" && schema.properties === undefined) return {};
+    throw new Error("DSH tool parameters must use an object JSON Schema");
+  }
+  const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+  return Object.fromEntries(Object.entries(schema.properties).map(([name, property]) => {
+    let field;
+    try {
+      field = z.fromJSONSchema(property);
+    } catch {
+      field = z.unknown();
+    }
+    return [name, required.has(name) ? field : field.optional()];
+  }));
+}
+
+function dshToolResult(result) {
+  const content = (result.content ?? []).map(block => {
+    if (block?.type === "text") return { type: "text", text: String(block.text ?? "") };
+    if (block?.type === "image" && typeof block.data === "string" && typeof block.mediaType === "string") {
+      return { type: "image", data: block.data, mimeType: block.mediaType };
+    }
+    return { type: "text", text: JSON.stringify(block) };
+  });
+  if (content.length === 0) content.push({ type: "text", text: result.isError ? "DSH tool failed" : "DSH tool completed." });
+  return { content, isError: Boolean(result.isError) };
 }
 
 function normalizeSdkMessage(message, state) {

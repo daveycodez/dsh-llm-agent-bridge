@@ -2,8 +2,31 @@
   "name": "@relay/plugin-claude",
   "version": "0.1.0",
   "type": "module",
-  "exports": { ".": "./plugin.mjs" },
-  "files": ["plugin.mjs", "cli-client.mjs", "sdk-client.mjs", "session-runtime.mjs"],
-  "dependencies": { "@relay/plugin-sdk": "0.1.0" },
-  "optionalDependencies": { "@anthropic-ai/claude-agent-sdk": "^0.3.233" }
+  "main": "lib/host-plugin.js",
+  "scripts": {
+    "prebuild": "node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\"",
+    "build": "tsdown --config tsdown.config.ts",
+    "postbuild": "node normalize-build.mjs",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "exports": { ".": "./lib/host-plugin.js", "./client": "./lib/client.js", "./typert": "./lib/typert.host.js", "./package.json": "./package.json" },
+  "files": ["cordis.patch.yml", "presets", "lib/client.js", "lib/client.js.map", "lib/host-plugin.js", "lib/host-plugin.js.map", "lib/typert.host.js", "lib/typert.host.js.map"],
+  "dsh": {
+    "client": { "inject": ["@deepseek-ai/dsh-api-remotes", "@deepseek-ai/dsh-client-connection", "@deepseek-ai/dsh-client-locale", "@deepseek-ai/dsh-client-runtime", "@deepseek-ai/dsh-client-ui-conversation", "@deepseek-ai/dsh-client-ui-primitives", "@deepseek-ai/dsh-client-ui-settings", "@deepseek-ai/dsh-client-ui-slots", "@deepseek-ai/dsh-client-ui-theme"], "platform": "web" },
+    "bundle": { "patch": "./cordis.patch.yml" }
+  },
+  "dependencies": { "@anthropic-ai/claude-agent-sdk": "^0.3.233", "zod": "4.4.3" },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-llm": ">=0.1.0-rc.5 <0.2.0",
+    "@deepseek-ai/dsh-session": ">=0.1.0-rc.5 <0.2.0",
+    "@deepseek-ai/dsh-typert-protocol": ">=0.1.0-rc.5 <0.2.0",
+    "react": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-llm": { "optional": true },
+    "@deepseek-ai/dsh-session": { "optional": true },
+    "@deepseek-ai/dsh-typert-protocol": { "optional": true },
+    "react": { "optional": true }
+  },
+  "devDependencies": { "@types/react": "~18.3.1", "lightningcss": "1.32.0", "tsdown": "0.22.2", "typescript": "6.0.3" }
 }
