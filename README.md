@@ -1,8 +1,17 @@
 # Claude Code Conversations for DeepSeek Harness
 
+[![npm version](https://img.shields.io/npm/v/relay-dsh-plugin-claude?label=npm)](https://www.npmjs.com/package/relay-dsh-plugin-claude)
+[![CI](https://github.com/yangbobo2021/relay-dsh-plugin-claude/actions/workflows/ci.yml/badge.svg)](https://github.com/yangbobo2021/relay-dsh-plugin-claude/actions/workflows/ci.yml)
+[![npm downloads](https://img.shields.io/npm/dm/relay-dsh-plugin-claude?label=downloads)](https://www.npmjs.com/package/relay-dsh-plugin-claude)
+[![GitHub stars](https://img.shields.io/github/stars/yangbobo2021/relay-dsh-plugin-claude?style=flat)](https://github.com/yangbobo2021/relay-dsh-plugin-claude/stargazers)
+[![MIT license](https://img.shields.io/github/license/yangbobo2021/relay-dsh-plugin-claude)](LICENSE)
+[![DSH compatibility](https://img.shields.io/badge/DSH-0.1.1--rc.2-2f7d68)](https://github.com/deepseek-ai/deepseek-harness)
+[![npm provenance](https://img.shields.io/badge/npm_provenance-verified-2f9e44)](https://www.npmjs.com/package/relay-dsh-plugin-claude/v/0.1.1-rc.2)
+
 English | [中文](README.zh.md)
 
 **npm package:** [`relay-dsh-plugin-claude`](https://www.npmjs.com/package/relay-dsh-plugin-claude)
+· [All Relay DSH plugins](https://github.com/yangbobo2021/Relay/blob/codex/relay-foundation/docs/dsh-plugins.md)
 
 `relay-dsh-plugin-claude` adds **Claude Code as a conversation backend** to the
 official [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
@@ -64,7 +73,7 @@ plugin does not collect them.
 Stop a running DSH Web process before changing Profile bundles. Choose one of
 the following sources.
 
-#### Stable npm release (recommended)
+#### Stable npm release
 
 The published npm package name is
 [`relay-dsh-plugin-claude`](https://www.npmjs.com/package/relay-dsh-plugin-claude).
@@ -77,10 +86,11 @@ npx @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile web add relay-dsh-plugin-claude
 At the time of writing, `latest` resolves to stable version `0.1.0`. The linked
 npm page is the source of truth for the current version.
 
-#### npm prerelease
+#### npm prerelease (recommended during DSH preview)
 
 Use `@next` to try the newest release candidate that has passed the repository's
-CI publishing and official DSH compatibility checks:
+CI publishing and official DSH compatibility checks. The current candidate also
+contains the latest model-selection synchronization fix:
 
 ```bash
 npx @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile web add relay-dsh-plugin-claude@next
