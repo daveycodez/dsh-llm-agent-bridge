@@ -13,6 +13,12 @@ English | [中文](README.zh.md)
 **npm package:** [`relay-dsh-plugin-claude`](https://www.npmjs.com/package/relay-dsh-plugin-claude)
 · [All Relay DSH plugins](https://github.com/yangbobo2021/Relay/blob/codex/relay-foundation/docs/dsh-plugins.md)
 
+[![Live npm-installed Relay plugins in official DSH](https://raw.githubusercontent.com/yangbobo2021/Relay/codex/relay-foundation/docs/media/dsh-plugin-suite-demo.gif)](https://github.com/yangbobo2021/Relay/blob/codex/relay-foundation/docs/dsh-plugins.md)
+
+*Real npm-installed demo on official DSH: live Codex and Claude replies, a
+workspace file preview, and an executed terminal command. [Watch the H.264
+MP4](https://github.com/yangbobo2021/Relay/blob/codex/relay-foundation/docs/media/dsh-plugin-suite-demo.mp4?raw=1).*
+
 `relay-dsh-plugin-claude` adds **Claude Code as a conversation backend** to the
 official [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 (DSH) Web UI. After installation, **Claude Code** appears in DSH's New Session

@@ -13,6 +13,12 @@
 **npm 包名：** [`relay-dsh-plugin-claude`](https://www.npmjs.com/package/relay-dsh-plugin-claude)
 · [全部 Relay DSH 插件](https://github.com/yangbobo2021/Relay/blob/codex/relay-foundation/docs/dsh-plugins.zh.md)
 
+[![在官方 DSH 中实装运行的 Relay 插件](https://raw.githubusercontent.com/yangbobo2021/Relay/codex/relay-foundation/docs/media/dsh-plugin-suite-demo.gif)](https://github.com/yangbobo2021/Relay/blob/codex/relay-foundation/docs/dsh-plugins.zh.md)
+
+*演示来自官方 DSH 上的真实 npm 安装：Codex 与 Claude 返回真实回复，Files
+预览工作区文件，Terminal 实际执行命令。[观看 H.264
+MP4](https://github.com/yangbobo2021/Relay/blob/codex/relay-foundation/docs/media/dsh-plugin-suite-demo.mp4?raw=1)。*
+
 `relay-dsh-plugin-claude` 为官方
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）Web
 界面增加 **Claude Code 对话后端**。安装后，DSH 的新建会话模式菜单中会出现
