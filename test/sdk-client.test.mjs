@@ -221,3 +221,43 @@ async function untilTurnCompleted(activity) {
     await new Promise(resolve => setTimeout(resolve, 0));
   }
 }
+
+test("the model catalog comes from the SDK, including families this plugin predates", async () => {
+  let closed = false;
+  const sdk = {
+    query() {
+      return {
+        async *[Symbol.asyncIterator]() {},
+        async supportedModels() {
+          return [
+            { value: "default", displayName: "Default (recommended)", description: "", supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"] },
+            { value: "claude-fable-5[1m]", displayName: "Fable", description: "", supportedEffortLevels: ["low", "high"] },
+            { value: "haiku", displayName: "Haiku", description: "", supportsEffort: false },
+          ];
+        },
+        close() { closed = true; },
+      };
+    },
+  };
+
+  const models = await new ClaudeSdkClient({ sdk }).listModels();
+
+  assert.deepEqual(models.map(model => model.id), ["default", "claude-fable-5[1m]", "haiku"]);
+  assert.equal(models[0].isDefault, true);
+  assert.deepEqual(models[1].supportedReasoningEfforts.map(effort => effort.reasoningEffort), ["low", "high"]);
+  assert.equal(models[1].defaultReasoningEffort, "low");
+  assert.equal(models[2].supportedReasoningEfforts, undefined);
+  assert.equal(closed, true);
+});
+
+test("an unavailable catalog falls back to the built-in model list", async () => {
+  const sdk = { query() { return { async supportedModels() { throw new Error("no control channel"); }, close() {} }; } };
+  const diagnostics = [];
+  const client = new ClaudeSdkClient({ sdk });
+  client.on("diagnostic", message => diagnostics.push(message));
+
+  const models = await client.listModels();
+
+  assert.equal(models.some(model => model.id === "sonnet"), true);
+  assert.match(diagnostics[0], /catalog unavailable/);
+});

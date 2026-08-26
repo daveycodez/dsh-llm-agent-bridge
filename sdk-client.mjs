@@ -2,14 +2,36 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { z } from "zod";
 
+/**
+ * Only a fallback: the live catalog comes from the SDK's supportedModels(), so
+ * new model families appear without a release here.
+ */
 const DEFAULT_MODELS = [
   { id: "sonnet", displayName: "Claude Sonnet", isDefault: true, defaultReasoningEffort: "medium", supportedReasoningEfforts: reasoningEfforts() },
   { id: "opus", displayName: "Claude Opus", isDefault: false, defaultReasoningEffort: "high", supportedReasoningEfforts: reasoningEfforts() },
+  { id: "fable", displayName: "Claude Fable", isDefault: false, defaultReasoningEffort: "medium", supportedReasoningEfforts: reasoningEfforts() },
   { id: "haiku", displayName: "Claude Haiku", isDefault: false, defaultReasoningEffort: "low", supportedReasoningEfforts: reasoningEfforts() },
 ];
 
-function reasoningEfforts() {
-  return ["low", "medium", "high"].map(reasoningEffort => ({ reasoningEffort }));
+function reasoningEfforts(levels = ["low", "medium", "high"]) {
+  return levels.map(reasoningEffort => ({ reasoningEffort }));
+}
+
+/** Map one SDK ModelInfo row onto the runtime's model shape. */
+function toRuntimeModel(info, index) {
+  const levels = info.supportsEffort === false ? [] : (info.supportedEffortLevels ?? []);
+  return {
+    id: info.value,
+    displayName: info.displayName ?? info.value,
+    description: info.description,
+    isDefault: index === 0,
+    ...(levels.length
+      ? {
+          defaultReasoningEffort: levels.includes("medium") ? "medium" : levels[0],
+          supportedReasoningEfforts: reasoningEfforts(levels),
+        }
+      : {}),
+  };
 }
 
 export class ClaudeSdkClient extends EventEmitter {
@@ -31,7 +53,37 @@ export class ClaudeSdkClient extends EventEmitter {
   }
 
   async listModels() {
-    return DEFAULT_MODELS;
+    const live = await this.fetchSupportedModels().catch((error) => {
+      this.emit("diagnostic", `Claude model catalog unavailable, using defaults: ${error.message}`);
+      return null;
+    });
+    return live?.length ? live : DEFAULT_MODELS;
+  }
+
+  /**
+   * Open a control-only query — streaming input that never yields, so no turn
+   * runs — purely to read the catalog the installed Claude Code advertises.
+   */
+  async fetchSupportedModels() {
+    if (!this.sdk) await this.start();
+    if (typeof this.sdk.query !== "function") return null;
+    let release;
+    const idle = new Promise((resolve) => { release = resolve; });
+    const prompt = (async function* () { await idle; })();
+    const query = this.sdk.query({
+      prompt,
+      options: {
+        ...(this.pathToClaudeCodeExecutable ? { pathToClaudeCodeExecutable: this.pathToClaudeCodeExecutable } : {}),
+      },
+    });
+    try {
+      if (typeof query.supportedModels !== "function") return null;
+      const rows = await query.supportedModels();
+      return Array.isArray(rows) ? rows.map(toRuntimeModel) : null;
+    } finally {
+      release();
+      query.close?.();
+    }
   }
 
   async createSession(config = {}) {
