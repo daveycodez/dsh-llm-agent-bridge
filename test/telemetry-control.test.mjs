@@ -5,13 +5,15 @@ import { createTelemetryControl, exportingState, scanOnlyTelemetryControl } from
 
 function hostWithTelemetry(sharing, { fiber = true } = {}) {
   const record = { shutdown: 0, disposed: 0 };
+  let mounted = true;
   const backend = {
     sharing,
     provider: sharing === "disabled" ? undefined : {},
     async shutdown() { record.shutdown += 1; },
-    ctx: fiber ? { fiber: { async dispose() { record.disposed += 1; } } } : {},
+    // Disposing a cordis fiber unmounts the service it provides, so the host
+    // stops answering for it — that is what the guard verifies against.
+    ctx: fiber ? { fiber: { async dispose() { record.disposed += 1; mounted = false; } } } : {},
   };
-  let mounted = true;
   const ctx = { get: name => (name === "sessionTelemetry" && mounted ? backend : undefined) };
   return { ctx, record, unmount: () => { mounted = false; } };
 }
@@ -90,14 +92,36 @@ test("an unreadable host still refuses on the config scan", async () => {
   }
 });
 
-test("a row that will not unmount is still left with a dead pipeline", async () => {
+test("a row that will not unmount refuses rather than claiming success", async () => {
+  // shutdown() kills the pipeline but leaves the row reporting "full", and from
+  // outside there is no way to confirm the pipe is dead. Refuse instead.
   const { ctx, record } = hostWithTelemetry("full", { fiber: false });
   const control = createTelemetryControl(ctx, { logger: { warn() {} } });
 
-  assert.deepEqual(await control.enforce(), { state: "disabled", sharing: "full" });
-  assert.equal(record.shutdown, 1);
+  await assert.rejects(() => control.enforce(), /could not be turned off/);
+  assert.equal(record.shutdown, 1, "the attempt is still made");
 });
 
 test("the scan-only control never reaches for a host", async () => {
   assert.deepEqual(await scanOnlyTelemetryControl().enforce(), { state: "off" });
+});
+
+test("a teardown that fails degrades to refusing, and is never memoized", async () => {
+  // Both paths fail and both swallow their errors: the exporter survives.
+  const backend = {
+    sharing: "full",
+    provider: {},
+    async shutdown() { throw new Error("socket busy"); },
+    ctx: { fiber: { async dispose() { throw new Error("row is pinned"); } } },
+  };
+  const ctx = { get: name => (name === "sessionTelemetry" ? backend : undefined) };
+  const control = createTelemetryControl(ctx, { logger: { warn() {} } });
+
+  await assert.rejects(() => control.enforce(), /could not be turned off/);
+  // The failure must not stick: a later turn re-checks rather than assuming.
+  await assert.rejects(() => control.enforce(), /could not be turned off/);
+
+  backend.sharing = "disabled";
+  backend.provider = undefined;
+  assert.deepEqual(await control.enforce(), { state: "off" }, "and it recovers once the host is actually quiet");
 });

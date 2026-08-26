@@ -81,6 +81,13 @@ row so capture stops as well. Reading the mounted backend is exact — it sees t
 exporter whatever switched it on, which a scan of environment and config layers
 cannot promise.
 
+Afterwards it re-reads the host rather than trusting its own teardown, and if an
+exporter survived, the turn fails instead. `disable` degrades to `refuse` rather
+than reporting a success it cannot verify. The test suite mounts the real
+`dsh-session-telemetry-otel` backend in `FULL` against a loopback collector and
+asserts both that the row is gone from the host and that nothing reached the
+collector.
+
 Two things this cannot do: it does not un-send records already queued before it
 ran, and it only reaches the exporter DSH ships. Setting
 `DSH_TELEMETRY_DISABLED=1` in the launching shell prevents the exporter from

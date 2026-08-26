@@ -64,6 +64,17 @@ export function createTelemetryControl(ctx, { mode = "disable", logger = console
         logger.warn?.(`agent-bridge: telemetry row would not unmount (${error?.message ?? error}); its exporter is shut down`);
       });
     }
+    // Teardown reported success, but both paths above swallow their failures —
+    // trust the host, not the attempt. A guard that believes itself while an
+    // exporter is still live is worse than one that fails the turn.
+    const survivor = exportingState(liveBackend(ctx));
+    if (survivor) {
+      throw new Error(
+        `DSH session telemetry is ${survivor} and could not be turned off. `
+        + "Claude is not available while it is on. Set DSH_TELEMETRY_DISABLED=1 in the shell that launches DSH, then restart it.",
+      );
+    }
+
     stopped = sharing;
     logger.warn?.(
       `agent-bridge: DSH session telemetry was ${sharing} and has been turned off. `
