@@ -7,31 +7,73 @@ import { z } from "zod";
  * new model families appear without a release here.
  */
 const DEFAULT_MODELS = [
-  { id: "sonnet", displayName: "Claude Sonnet", isDefault: true, defaultReasoningEffort: "medium", supportedReasoningEfforts: reasoningEfforts() },
-  { id: "opus", displayName: "Claude Opus", isDefault: false, defaultReasoningEffort: "high", supportedReasoningEfforts: reasoningEfforts() },
-  { id: "fable", displayName: "Claude Fable", isDefault: false, defaultReasoningEffort: "medium", supportedReasoningEfforts: reasoningEfforts() },
-  { id: "haiku", displayName: "Claude Haiku", isDefault: false, defaultReasoningEffort: "low", supportedReasoningEfforts: reasoningEfforts() },
+  { id: "opus", displayName: "Opus 5", isDefault: true, defaultReasoningEffort: "high", supportedReasoningEfforts: reasoningEfforts() },
+  { id: "fable", displayName: "Fable 5", isDefault: false, defaultReasoningEffort: "medium", supportedReasoningEfforts: reasoningEfforts() },
+  { id: "sonnet", displayName: "Sonnet 5", isDefault: false, defaultReasoningEffort: "medium", supportedReasoningEfforts: reasoningEfforts() },
+  { id: "haiku", displayName: "Haiku 4.5", isDefault: false, defaultReasoningEffort: "low", supportedReasoningEfforts: reasoningEfforts() },
 ];
 
 function reasoningEfforts(levels = ["low", "medium", "high"]) {
   return levels.map(reasoningEffort => ({ reasoningEffort }));
 }
 
-/** Map one SDK ModelInfo row onto the runtime's model shape. */
-function toRuntimeModel(info, index) {
-  const levels = info.supportsEffort === false ? [] : (info.supportedEffortLevels ?? []);
-  return {
-    id: info.value,
-    displayName: info.displayName ?? info.value,
-    description: info.description,
-    isDefault: index === 0,
-    ...(levels.length
-      ? {
-          defaultReasoningEffort: levels.includes("medium") ? "medium" : levels[0],
-          supportedReasoningEfforts: reasoningEfforts(levels),
-        }
-      : {}),
-  };
+/**
+ * Project the SDK catalog onto the runtime's model shape.
+ *
+ * DSH always requires an explicit model, so the "default" row is dropped — it
+ * resolves to the same canonical model as a named row anyway, and its
+ * recommendation is preserved by marking that row as the default. Names come
+ * from `resolvedModel` (the canonical wire id) rather than the display strings,
+ * and descriptions are omitted so the picker stays one line per model.
+ */
+function toRuntimeModels(rows) {
+  const recommended = rows.find(row => row.value === "default")?.resolvedModel;
+  const named = rows.filter(row => row.value !== "default");
+  const seen = new Set();
+  const models = [];
+  for (const row of named) {
+    const key = row.resolvedModel ?? row.value;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const levels = row.supportsEffort === false ? [] : (row.supportedEffortLevels ?? []);
+    models.push({
+      id: row.value,
+      displayName: modelName(row),
+      isDefault: recommended !== undefined && row.resolvedModel === recommended,
+      ...(levels.length
+        ? {
+            defaultReasoningEffort: levels.includes("medium") ? "medium" : levels[0],
+            supportedReasoningEfforts: reasoningEfforts(levels),
+          }
+        : {}),
+    });
+  }
+  if (models.length && !models.some(model => model.isDefault)) models[0].isDefault = true;
+  disambiguate(models, named);
+  return models;
+}
+
+/** `claude-haiku-4-5-20251001` -> `Haiku 4.5`; `claude-opus-5[1m]` -> `Opus 5`. */
+function modelName(row) {
+  const canonical = (row.resolvedModel ?? row.value).replace(/\[[^\]]*\]$/, "");
+  const parts = canonical.replace(/^claude-/, "").replace(/-\d{8}$/, "").split("-");
+  const family = parts.shift() ?? "";
+  if (!family) return row.displayName ?? row.value;
+  const version = parts.filter(part => /^\d+$/.test(part)).join(".");
+  const name = `${family.charAt(0).toUpperCase()}${family.slice(1)}${version ? ` ${version}` : ""}`;
+  return name;
+}
+
+/** Two rows of one family (e.g. `opus` and `opus[1m]`) must stay distinguishable. */
+function disambiguate(models, rows) {
+  const counts = new Map();
+  for (const model of models) counts.set(model.displayName, (counts.get(model.displayName) ?? 0) + 1);
+  for (const model of models) {
+    if (counts.get(model.displayName) === 1) continue;
+    const row = rows.find(candidate => candidate.value === model.id);
+    const tag = /\[([^\]]+)\]$/.exec(row?.resolvedModel ?? row?.value ?? "")?.[1];
+    if (tag) model.displayName = `${model.displayName} (${tag.toUpperCase()})`;
+  }
 }
 
 export class ClaudeSdkClient extends EventEmitter {
@@ -79,7 +121,7 @@ export class ClaudeSdkClient extends EventEmitter {
     try {
       if (typeof query.supportedModels !== "function") return null;
       const rows = await query.supportedModels();
-      return Array.isArray(rows) ? rows.map(toRuntimeModel) : null;
+      return Array.isArray(rows) ? toRuntimeModels(rows) : null;
     } finally {
       release();
       query.close?.();

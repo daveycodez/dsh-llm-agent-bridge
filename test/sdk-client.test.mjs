@@ -222,7 +222,7 @@ async function untilTurnCompleted(activity) {
   }
 }
 
-test("the model catalog comes from the SDK, including families this plugin predates", async () => {
+test("the catalog drops the default row and names models from their canonical ids", async () => {
   let closed = false;
   const sdk = {
     query() {
@@ -230,9 +230,10 @@ test("the model catalog comes from the SDK, including families this plugin preda
         async *[Symbol.asyncIterator]() {},
         async supportedModels() {
           return [
-            { value: "default", displayName: "Default (recommended)", description: "", supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"] },
-            { value: "claude-fable-5[1m]", displayName: "Fable", description: "", supportedEffortLevels: ["low", "high"] },
-            { value: "haiku", displayName: "Haiku", description: "", supportsEffort: false },
+            { value: "default", resolvedModel: "claude-opus-5[1m]", displayName: "Default (recommended)", description: "Best for everyday tasks", supportedEffortLevels: ["low", "medium", "high"] },
+            { value: "opus[1m]", resolvedModel: "claude-opus-5[1m]", displayName: "Opus (1M context)", description: "Best for everyday tasks", supportedEffortLevels: ["low", "medium", "high"] },
+            { value: "claude-fable-5[1m]", resolvedModel: "claude-fable-5", displayName: "Fable", description: "", supportedEffortLevels: ["low", "high"] },
+            { value: "haiku", resolvedModel: "claude-haiku-4-5-20251001", displayName: "Haiku", description: "", supportsEffort: false },
           ];
         },
         close() { closed = true; },
@@ -242,8 +243,10 @@ test("the model catalog comes from the SDK, including families this plugin preda
 
   const models = await new ClaudeSdkClient({ sdk }).listModels();
 
-  assert.deepEqual(models.map(model => model.id), ["default", "claude-fable-5[1m]", "haiku"]);
-  assert.equal(models[0].isDefault, true);
+  assert.deepEqual(models.map(model => model.id), ["opus[1m]", "claude-fable-5[1m]", "haiku"]);
+  assert.deepEqual(models.map(model => model.displayName), ["Opus 5", "Fable 5", "Haiku 4.5"]);
+  assert.equal(models.every(model => model.description === undefined), true);
+  assert.equal(models[0].isDefault, true, "the recommendation carried by the default row moves onto its named twin");
   assert.deepEqual(models[1].supportedReasoningEfforts.map(effort => effort.reasoningEffort), ["low", "high"]);
   assert.equal(models[1].defaultReasoningEffort, "low");
   assert.equal(models[2].supportedReasoningEfforts, undefined);

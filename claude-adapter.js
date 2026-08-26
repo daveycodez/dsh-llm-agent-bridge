@@ -35,7 +35,6 @@ export class ClaudeDshAdapter extends LlmAdapter {
         provider: CLAUDE_PROVIDER,
         id: model.id,
         name: model.displayName ?? model.id,
-        description: model.description,
         inputModalities: ["text", "image"],
       }));
   }

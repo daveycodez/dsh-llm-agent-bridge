@@ -4,10 +4,10 @@ import { EventEmitter } from "node:events";
 import readline from "node:readline";
 
 const DEFAULT_MODELS = [
-  { id: "sonnet", displayName: "Claude Sonnet", isDefault: true, defaultReasoningEffort: "medium" },
-  { id: "opus", displayName: "Claude Opus", isDefault: false, defaultReasoningEffort: "high" },
-  { id: "fable", displayName: "Claude Fable", isDefault: false, defaultReasoningEffort: "medium" },
-  { id: "haiku", displayName: "Claude Haiku", isDefault: false, defaultReasoningEffort: "low" },
+  { id: "opus", displayName: "Opus 5", isDefault: true, defaultReasoningEffort: "high" },
+  { id: "fable", displayName: "Fable 5", isDefault: false, defaultReasoningEffort: "medium" },
+  { id: "sonnet", displayName: "Sonnet 5", isDefault: false, defaultReasoningEffort: "medium" },
+  { id: "haiku", displayName: "Haiku 4.5", isDefault: false, defaultReasoningEffort: "low" },
 ];
 
 export class ClaudeCliClient extends EventEmitter {
