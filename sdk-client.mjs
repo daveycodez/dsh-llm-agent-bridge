@@ -17,6 +17,27 @@ function reasoningEfforts(levels = ["low", "medium", "high", "xhigh", "max"]) {
   return levels.map(reasoningEffort => ({ reasoningEffort }));
 }
 
+function stripTag(value) {
+  return String(value ?? "").replace(/\[[^\]]*\]$/, "");
+}
+
+/**
+ * Anthropic's usage shape onto the harness's. Cache reads and writes stay
+ * apart because the harness reports a cache-hit rate from them, and thinking
+ * tokens are carried so reasoning is not billed as invisible output.
+ */
+export function tokenUsage(usage) {
+  if (!usage) return null;
+  const thinking = usage.output_tokens_details?.thinking_tokens;
+  return {
+    inputTokens: usage.input_tokens ?? 0,
+    outputTokens: usage.output_tokens ?? 0,
+    ...(Number.isSafeInteger(usage.cache_read_input_tokens) ? { cacheReadTokens: usage.cache_read_input_tokens } : {}),
+    ...(Number.isSafeInteger(usage.cache_creation_input_tokens) ? { cacheWriteTokens: usage.cache_creation_input_tokens } : {}),
+    ...(Number.isSafeInteger(thinking) ? { reasoningTokens: thinking } : {}),
+  };
+}
+
 /**
  * Project the SDK catalog onto the runtime's model shape.
  *
@@ -38,6 +59,7 @@ function toRuntimeModels(rows) {
     const levels = row.supportsEffort === false ? [] : (row.supportedEffortLevels ?? []);
     models.push({
       id: row.value,
+      resolvedModel: row.resolvedModel,
       displayName: modelName(row),
       isDefault: recommended !== undefined && row.resolvedModel === recommended,
       // No default effort is invented: ModelInfo reports none, so leaving it
@@ -85,6 +107,8 @@ export class ClaudeSdkClient extends EventEmitter {
     // Tool calls handed to the harness: the MCP handler parks here until the
     // harness executes the call and sends the result back.
     this.pendingToolCalls = new Map();
+    // Context capacity per canonical model, learned from result messages.
+    this.contextWindows = new Map();
     this.closed = false;
   }
 
@@ -135,6 +159,35 @@ export class ClaudeSdkClient extends EventEmitter {
   /** Fail every parked call, e.g. when a turn is interrupted mid-handoff. */
   rejectAllToolCalls(error) {
     for (const parkId of [...this.pendingToolCalls.keys()]) this.rejectToolCall(parkId, error);
+  }
+
+  /**
+   * Record each model's context capacity as the SDK reports it. `ModelInfo`
+   * carries no context window, but every result message does, so the number is
+   * exact once a turn has run and a sane default until then.
+   */
+  learnContextWindows(modelUsage) {
+    for (const [model, usage] of Object.entries(modelUsage ?? {})) {
+      if (Number.isSafeInteger(usage?.contextWindow)) this.contextWindows.set(model, usage.contextWindow);
+      if (usage?.canonicalModel && Number.isSafeInteger(usage?.contextWindow)) {
+        this.contextWindows.set(usage.canonicalModel, usage.contextWindow);
+      }
+    }
+  }
+
+  /**
+   * Context capacity for one catalog row.
+   *
+   * @param model - the row id, e.g. `haiku` or `opus[1m]`.
+   * @param resolvedModel - the canonical id that row maps to, when known.
+   */
+  contextWindowFor(model, resolvedModel) {
+    for (const key of [resolvedModel, model].filter(Boolean)) {
+      const learned = this.contextWindows.get(key) ?? this.contextWindows.get(stripTag(key));
+      if (learned) return learned;
+    }
+    // Until a turn has run: the [1m] rows are the long-context variants.
+    return /\[1m\]$/.test(String(resolvedModel ?? model)) ? 1_000_000 : 200_000;
   }
 
   async listModels() {
@@ -314,7 +367,8 @@ export class ClaudeSdkClient extends EventEmitter {
         }
         if (message.type === "result") {
           completed = true;
-          this.completeTurn(session.id, turnId, message.is_error ? "failed" : "completed", resultError(message));
+          this.learnContextWindows(message.modelUsage);
+          this.completeTurn(session.id, turnId, message.is_error ? "failed" : "completed", resultError(message), tokenUsage(message.usage));
         }
       }
       if (!completed) this.completeTurn(session.id, turnId, "completed");
@@ -323,7 +377,7 @@ export class ClaudeSdkClient extends EventEmitter {
     }
   }
 
-  completeTurn(sessionId, turnId, status, error = null) {
+  completeTurn(sessionId, turnId, status, error = null, usage = null) {
     this.emit("activity", {
       method: "turn/completed",
       params: {
@@ -333,6 +387,7 @@ export class ClaudeSdkClient extends EventEmitter {
           status,
           error: error ? { message: error.message } : null,
           items: [],
+          ...(usage ? { usage } : {}),
         },
       },
     });

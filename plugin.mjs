@@ -45,6 +45,7 @@ function executionCapability(runtime, ready) {
     resumeSession: runtime.resumeSession.bind(runtime),
     sendMessage: runtime.sendMessage.bind(runtime),
     interruptTurn: runtime.interruptTurn.bind(runtime),
+    contextWindowFor: runtime.contextWindowFor.bind(runtime),
     resolveToolCall: runtime.resolveToolCall.bind(runtime),
     rejectToolCall: runtime.rejectToolCall.bind(runtime),
     rejectAllToolCalls: runtime.rejectAllToolCalls.bind(runtime),
@@ -83,7 +84,7 @@ function createClaudeCliClient(config) {
  */
 export const DELEGATED_CLIENT_METHODS = [
   "listModels", "createSession", "resumeSession", "sendMessage", "interruptTurn",
-  "releaseSession", "resolveRequest", "rejectRequest",
+  "releaseSession", "resolveRequest", "rejectRequest", "contextWindowFor",
   "resolveToolCall", "rejectToolCall", "rejectAllToolCalls", "close",
 ];
 

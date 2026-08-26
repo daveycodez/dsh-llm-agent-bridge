@@ -306,10 +306,19 @@ class FakeRuntime extends EventEmitter {
 
   rejectAllToolCalls() {}
 
+  contextWindowFor() { return 200000; }
+
   finishTurn(sessionId, turnId) {
     this.emit("activity", notification("item/agentMessage/delta", sessionId, turnId, { itemId: "answer-1", delta: this.answer }));
     this.emit("activity", { method: "turn/completed", params: {
-      sessionId, turn: { id: turnId, status: "completed", error: null, items: [] },
+      sessionId,
+      turn: {
+        id: turnId,
+        status: "completed",
+        error: null,
+        items: [],
+        usage: { inputTokens: 20, outputTokens: 160, cacheReadTokens: 17844, cacheWriteTokens: 0, reasoningTokens: 75 },
+      },
     } });
   }
 
@@ -432,4 +441,30 @@ test("a turn answered by another model carries its tool work, not just its prose
   assert.match(sent, /tool result: .*23\.1\.1/, "the other model's tool output must reach Claude");
   assert.match(sent, /called read/, "and what it called to get it");
   assert.match(sent, /what version was that\?$/, "with the live question last");
+});
+
+test("the harness is given token accounting and context capacity", async () => {
+  const runtime = new FakeRuntime();
+  const adapter = new ClaudeDshAdapter({ runtime, ready: Promise.resolve() });
+  const agent = fakeAgent();
+  adapter.attachAgent(agent);
+
+  const chunks = await collect(adapter.stream({
+    provider: "claude",
+    model: "sonnet",
+    sessionId: agent.id,
+    messages: [{ role: "user", source: { kind: "user" }, content: [{ type: "text", text: "hi" }] }],
+  }));
+
+  const usage = chunks.find(chunk => chunk.type === "usage");
+  assert.ok(usage, "without a usage chunk the harness can report no tokens, cache rate or tok/s");
+  assert.deepEqual(usage.usage, {
+    inputTokens: 20, outputTokens: 160, cacheReadTokens: 17844, cacheWriteTokens: 0, reasoningTokens: 75,
+  });
+  // The protocol requires usage before the terminal finish, and nothing after.
+  assert.equal(chunks.indexOf(usage), chunks.length - 2);
+  assert.equal(chunks.at(-1).type, "finish");
+
+  const model = await adapter.resolveModel("claude", "sonnet");
+  assert.deepEqual(model.context, { contextWindow: 200000 }, "context pressure cannot render without a window");
 });

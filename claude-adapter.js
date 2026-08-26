@@ -55,11 +55,14 @@ export class ClaudeDshAdapter extends LlmAdapter {
   async resolveModel(provider, model) {
     await this.ready;
     const info = runtimeModels(this.runtime).find(candidate => candidate.id === model);
+    const contextWindow = this.runtime.contextWindowFor?.(model, info?.resolvedModel);
     return {
       provider,
       id: model,
       name: info?.displayName ?? model,
       inputModalities: ["text", "image"],
+      // Without this the harness cannot show context pressure for the row.
+      ...(contextWindow ? { context: { contextWindow } } : {}),
       ...(Array.isArray(info?.supportedReasoningEfforts)
         ? {
             reasoning: {
@@ -285,6 +288,11 @@ export class ClaudeDshAdapter extends LlmAdapter {
       }
 
       for (const chunk of closeOpenBlocks(state)) yield chunk;
+
+      // The protocol wants usage before the terminal finish. One Claude query
+      // spans every step of a turn, so its result - and this chunk - arrive
+      // once, on the last step, already totalled.
+      if (completedTurn?.usage) yield { type: "usage", usage: completedTurn.usage };
 
       if (batch) {
         const calls = batch.map(parked => ({

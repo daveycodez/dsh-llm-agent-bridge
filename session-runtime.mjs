@@ -145,6 +145,11 @@ export class ClaudeSessionRuntime extends EventEmitter {
     return structuredClone(turn);
   }
 
+  /** Context capacity for one catalog row, as the backend reports it. */
+  contextWindowFor(model, resolvedModel) {
+    return this.client.contextWindowFor?.(model, resolvedModel) ?? null;
+  }
+
   /** Hand a harness-executed tool result back to the parked call. */
   resolveToolCall(toolUseId, result) {
     return this.client.resolveToolCall?.(toolUseId, result) ?? false;

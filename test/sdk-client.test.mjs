@@ -343,3 +343,37 @@ test("a caller that forgets settingSources still loads none of the user's Claude
 
   assert.deepEqual(captured.settingSources, [], "the default must not mount ~/.claude on top of the harness prompt");
 });
+
+test("Anthropic's usage shape maps onto the harness's, cache split intact", async () => {
+  const { tokenUsage } = await import("../sdk-client.mjs");
+
+  assert.deepEqual(tokenUsage({
+    input_tokens: 261,
+    output_tokens: 5,
+    cache_read_input_tokens: 1200,
+    cache_creation_input_tokens: 40,
+    output_tokens_details: { thinking_tokens: 3 },
+  }), { inputTokens: 261, outputTokens: 5, cacheReadTokens: 1200, cacheWriteTokens: 40, reasoningTokens: 3 });
+
+  // Reads and writes must stay separate: the harness derives a cache-hit rate.
+  const usage = tokenUsage({ input_tokens: 10, output_tokens: 2, cache_read_input_tokens: 90, cache_creation_input_tokens: 0 });
+  assert.equal(usage.cacheReadTokens / (usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens), 0.9);
+
+  assert.equal(tokenUsage(null), null);
+  assert.deepEqual(tokenUsage({}), { inputTokens: 0, outputTokens: 0 });
+});
+
+test("context capacity is learned from result messages and defaulted until then", async () => {
+  const client = new ClaudeSdkClient({ sdk: {} });
+
+  assert.equal(client.contextWindowFor("haiku"), 200000, "a sane default before any turn has run");
+  assert.equal(client.contextWindowFor("opus[1m]", "claude-opus-5[1m]"), 1000000, "the long-context rows are recognised");
+
+  client.learnContextWindows({
+    "claude-haiku-4-5-20251001": { contextWindow: 200000, canonicalModel: "claude-haiku-4-5" },
+    "claude-sonnet-5": { contextWindow: 500000 },
+  });
+
+  assert.equal(client.contextWindowFor("sonnet", "claude-sonnet-5"), 500000, "the reported number wins over the default");
+  assert.equal(client.contextWindowFor("haiku", "claude-haiku-4-5-20251001"), 200000);
+});
