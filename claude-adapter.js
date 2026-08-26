@@ -1,6 +1,9 @@
 import { LlmAdapter } from "@deepseek-ai/dsh-llm";
 
-export const CLAUDE_PROVIDER = "claude-agent-sdk";
+// Identification, not branding: the row names the thing it invokes. The
+// session event type below keeps its original name so activity already
+// recorded in existing sessions still renders.
+export const CLAUDE_PROVIDER = "claude";
 export const CLAUDE_ACTIVITY_EVENT = "claude-agent-sdk/activity";
 
 export class ClaudeDshAdapter extends LlmAdapter {
@@ -24,7 +27,7 @@ export class ClaudeDshAdapter extends LlmAdapter {
   }
 
   providerInfo() {
-    return { id: CLAUDE_PROVIDER, name: "Claude (Agent SDK)" };
+    return { id: CLAUDE_PROVIDER, name: "Claude" };
   }
 
   async listModels() {

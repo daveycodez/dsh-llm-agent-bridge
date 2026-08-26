@@ -18,7 +18,7 @@ test("the provider streams tool activity and answers into the native DSH convers
 
   const chunks = [];
   for await (const chunk of adapter.stream({
-    provider: "claude-agent-sdk",
+    provider: "claude",
     model: "sonnet",
     reasoningEffort: "high",
     sessionId: agent.id,
@@ -46,7 +46,7 @@ test("Claude models expose native reasoning effort choices", async () => {
   const runtime = new FakeRuntime();
   const adapter = new ClaudeDshAdapter({ runtime, ready: Promise.resolve() });
 
-  const model = await adapter.resolveModel("claude-agent-sdk", "sonnet");
+  const model = await adapter.resolveModel("claude", "sonnet");
 
   assert.deepEqual(model.reasoning.efforts.map(effort => effort.id), ["low", "high"]);
   assert.equal(model.reasoning.defaultEffort, "medium");
@@ -60,13 +60,13 @@ test("automatic title generation uses an isolated ephemeral Claude session", asy
 
   const [mainChunks, titleChunks] = await Promise.all([
     collect(adapter.stream({
-      provider: "claude-agent-sdk",
+      provider: "claude",
       model: "sonnet",
       sessionId: agent.id,
       messages: [{ role: "user", source: { kind: "user" }, content: [{ type: "text", text: "list project files" }] }],
     })),
     collect(adapter.stream({
-      provider: "claude-agent-sdk",
+      provider: "claude",
       model: "sonnet",
       sessionId: agent.id,
       purpose: "session-title",
@@ -177,7 +177,7 @@ test("Claude forwards generic DSH tools through a provider-neutral executor", as
   const adapter = new ClaudeDshAdapter({ runtime, ready: Promise.resolve() });
   adapter.attachAgent(agent);
   await collect(adapter.stream({
-    provider: "claude-agent-sdk",
+    provider: "claude",
     model: "sonnet",
     sessionId: agent.id,
     messages: [{ role: "user", source: { kind: "user" }, content: [{ type: "text", text: "use the probe" }] }],
@@ -312,7 +312,7 @@ test("DSH's mid-turn context splices never swallow the instruction", async () =>
   // then DSH appends workspace instructions, a runtime snapshot, and the skills
   // catalogue as further "user" messages.
   for await (const chunk of adapter.stream({
-    provider: "claude-agent-sdk",
+    provider: "claude",
     model: "haiku",
     sessionId: agent.id,
     messages: [
