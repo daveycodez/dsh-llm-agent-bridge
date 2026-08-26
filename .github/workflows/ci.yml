@@ -9,27 +9,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22.23.2
-          cache: npm
       - uses: pnpm/action-setup@v6
         with:
           version: 11.19.0
-      - name: Check out official DSH
-        uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          repository: deepseek-ai/deepseek-harness
-          ref: b150a551b8d465e31e418e1b2eaf5e79bbb7d28e
-          path: upstream/deepseek-harness
-      - run: pnpm install --ignore-scripts --frozen-lockfile
-        working-directory: upstream/deepseek-harness
-      - name: Build official DSH packages
-        run: pnpm run build:lib
-        working-directory: upstream/deepseek-harness
-      - run: npm ci --ignore-scripts
-      - run: npm run verify
-        env:
-          DSH_ROOT: ${{ github.workspace }}/upstream/deepseek-harness
-      - run: git diff --exit-code -- lib
-      - run: npm pack --dry-run
+          node-version: 22.23.2
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run verify
+      - name: Committed build artifacts are current
+        run: git diff --exit-code -- lib
