@@ -50,7 +50,10 @@ export function exportingState(backend) {
  */
 export function createTelemetryControl(ctx, { mode = "disable", logger = console } = {}) {
   const setting = TELEMETRY_MODES.includes(mode) ? mode : "disable";
-  let stopped = null;
+  // Records only that we removed an exporter, so the stale environment value
+  // that configured it is not mistaken for a live one. It never short-circuits
+  // the host check itself.
+  let removed = null;
 
   async function disable(backend, sharing) {
     // Drain and quiesce the pipeline through the backend's own API, then
@@ -67,6 +70,12 @@ export function createTelemetryControl(ctx, { mode = "disable", logger = console
     // Teardown reported success, but both paths above swallow their failures —
     // trust the host, not the attempt. A guard that believes itself while an
     // exporter is still live is worse than one that fails the turn.
+    //
+    // Deliberate, and not a bug to "fix" later: a row whose shutdown() worked
+    // but whose fiber would not unmount is refused even though nothing is
+    // leaking, because it keeps reporting its old sharing state and a dead
+    // pipeline cannot be confirmed from out here. Refusing on unconfirmable
+    // state is the point.
     const survivor = exportingState(liveBackend(ctx));
     if (survivor) {
       throw new Error(
@@ -75,7 +84,7 @@ export function createTelemetryControl(ctx, { mode = "disable", logger = console
       );
     }
 
-    stopped = sharing;
+    removed = sharing;
     logger.warn?.(
       `agent-bridge: DSH session telemetry was ${sharing} and has been turned off. `
       + "It uploads unredacted session records, which now include Claude's output. "
@@ -87,8 +96,9 @@ export function createTelemetryControl(ctx, { mode = "disable", logger = console
     /** @returns what the guard did, or throws when a turn must not run. */
     async enforce() {
       if (setting === "ignore") return { state: "ignored" };
-      if (stopped) return { state: "disabled", sharing: stopped };
 
+      // Re-read the host every turn. ctx.get() is cheap, and a row that came
+      // back after a teardown must be caught rather than assumed gone.
       const backend = liveBackend(ctx);
       const sharing = exportingState(backend);
       if (sharing) {
@@ -98,6 +108,10 @@ export function createTelemetryControl(ctx, { mode = "disable", logger = console
         await disable(backend, sharing);
         return { state: "disabled", sharing };
       }
+
+      // Quiet because we made it so: the environment or config layer that
+      // switched the exporter on is now stale, and must not read as live.
+      if (removed) return { state: "disabled", sharing: removed };
 
       // No readable backend: fall back to the config scan, which can only
       // report, not disable.

@@ -15,7 +15,16 @@ function hostWithTelemetry(sharing, { fiber = true } = {}) {
     ctx: fiber ? { fiber: { async dispose() { record.disposed += 1; mounted = false; } } } : {},
   };
   const ctx = { get: name => (name === "sessionTelemetry" && mounted ? backend : undefined) };
-  return { ctx, record, unmount: () => { mounted = false; } };
+  return {
+    ctx,
+    record,
+    unmount: () => { mounted = false; },
+    remount: next => {
+      backend.sharing = next;
+      backend.provider = next === "disabled" ? undefined : {};
+      mounted = true;
+    },
+  };
 }
 
 test("the live backend decides, whatever switched it on", () => {
@@ -124,4 +133,32 @@ test("a teardown that fails degrades to refusing, and is never memoized", async 
   backend.sharing = "disabled";
   backend.provider = undefined;
   assert.deepEqual(await control.enforce(), { state: "off" }, "and it recovers once the host is actually quiet");
+});
+
+test("an exporter that comes back after a teardown is caught, not assumed gone", async () => {
+  const { ctx, record, remount } = hostWithTelemetry("full");
+  const control = createTelemetryControl(ctx, { logger: { warn() {} } });
+
+  assert.deepEqual(await control.enforce(), { state: "disabled", sharing: "full" });
+  assert.equal(record.disposed, 1);
+
+  // Something put the row back — a reload, another plugin, a host that restores
+  // it. The same guard must catch it rather than answering from memory.
+  remount("feedback-only");
+  assert.deepEqual(await control.enforce(), { state: "disabled", sharing: "feedback-only" });
+  assert.equal(record.disposed, 2, "the returning row is torn down in its turn");
+});
+
+test("after a teardown, a stale environment value is not mistaken for a live exporter", async () => {
+  const { ctx, unmount } = hostWithTelemetry("full");
+  const control = createTelemetryControl(ctx, { logger: { warn() {} } });
+  await control.enforce();
+  unmount();
+
+  process.env.DSH_TELEMETRY_MODE = "FULL";
+  try {
+    assert.deepEqual(await control.enforce(), { state: "disabled", sharing: "full" });
+  } finally {
+    delete process.env.DSH_TELEMETRY_MODE;
+  }
 });
