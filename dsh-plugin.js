@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { definePlugin } from "./internal/plugin-sdk.mjs";
 import { ClaudeDshAdapter, CLAUDE_PROVIDER } from "./claude-adapter.js";
 import { ClaudeLinkStore } from "./claude-link-store.js";
+import { createTelemetryControl } from "./telemetry-control.js";
 import { handleClaudeSdkRequest } from "./claude-tools.js";
 
 export function createDshClaudePlugin(ctx, config = {}) {
@@ -14,8 +15,13 @@ export function createDshClaudePlugin(ctx, config = {}) {
     },
     async activate({ capabilities, defer }) {
       const runtime = capabilities.require("agent-bridge.execution.v1");
+      const telemetry = createTelemetryControl(ctx, { mode: config.telemetry, logger: ctx.logger });
+      // Turn a live exporter off before the first turn, not on the way into it.
+      await telemetry.enforce().catch(error => {
+        ctx.logger.error(`agent-bridge: telemetry guard failed: ${error?.message ?? error}`);
+      });
       const adapter = new ClaudeDshAdapter({
-        runtime, ready: runtime.whenReady(),
+        runtime, ready: runtime.whenReady(), telemetry,
         linkStore: new ClaudeLinkStore(resolveLinkPath(config.linkPath)), logger: ctx.logger,
       });
       defer(ctx.llm.registerAdapter([CLAUDE_PROVIDER], adapter));

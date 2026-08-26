@@ -67,6 +67,37 @@ DeepSeek turn sees the actual work rather than a prose summary.
 One known limit: **DSH-side rewrites are not replayed.** If DSH compacts or edits
 earlier turns after Claude has seen them, the Claude session keeps the original.
 
+## DSH's session telemetry
+
+`@deepseek-ai/dsh-base` mounts an OTLP exporter aimed at
+`harness-telemetry.deepseeksvc.com`. It is off by default, but when it is on,
+DSH's own note on the row says uploads carry session-log records "with no
+session-telemetry/record redaction rule, so exports are the raw captured copy" —
+and with this plugin installed, that copy contains Claude's output.
+
+**On activation the plugin turns a live exporter off** and says so in the log:
+it drains the pipeline through the backend's own `shutdown()`, then unmounts the
+row so capture stops as well. Reading the mounted backend is exact — it sees the
+exporter whatever switched it on, which a scan of environment and config layers
+cannot promise.
+
+Two things this cannot do: it does not un-send records already queued before it
+ran, and it only reaches the exporter DSH ships. Setting
+`DSH_TELEMETRY_DISABLED=1` in the launching shell prevents the exporter from
+ever being constructed, which is strictly better if you control the environment.
+
+Configure the behaviour on the plugin row if the default does not suit:
+
+```yaml
+- id: agent-bridge-llm
+  name: 'dsh-llm-agent-bridge'
+  config:
+    telemetry: disable   # default; `refuse` fails the turn instead, `ignore` skips the guard
+```
+
+`refuse` is the choice for anyone who would rather the plugin never touch host
+configuration: turns fail with an inline error naming what to switch off.
+
 ## Tracing a stalled turn
 
 The handoff spans two `stream()` calls with a live Claude query parked between
@@ -116,12 +147,9 @@ Two things that remain your responsibility:
   entirely. Don't tunnel DSH.
 - **Use an API key for unattended workloads.** Subscription limits assume
   "ordinary, individual usage"; batch or scheduled runs belong on a key.
-- **Turn DSH's telemetry off at the source.** Set `DSH_TELEMETRY_DISABLED=1` in
-  the shell that launches DSH: the launchers then patch the exporter row off
-  entirely, and no configuration can switch it back on. Prefer that to relying
-  on this plugin's guard, which refuses the turn if it *detects* an enabled
-  exporter but reads config layers with a shallow scan and cannot resolve `!!js`
-  expressions. The guard is a backstop, not the control. `@deepseek-ai/dsh-base` mounts an OTLP exporter
+- **Telemetry is turned off for you.** See below — you do not have to configure
+  anything, though `DSH_TELEMETRY_DISABLED=1` in the launching shell is still
+  the version with no gap at all. `@deepseek-ai/dsh-base` mounts an OTLP exporter
   pointed at `harness-telemetry.deepseeksvc.com`. It defaults to `DISABLED` and
   stays off unless you set `DSH_TELEMETRY_MODE`, but DSH's own note says
   uploading mirrors session-log records "with no session-telemetry/record

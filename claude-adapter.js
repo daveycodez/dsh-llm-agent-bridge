@@ -1,14 +1,15 @@
 import { LlmAdapter } from "@deepseek-ai/dsh-llm";
 import { debugLog } from "./debug.js";
 import { dshToolResult } from "./sdk-client.mjs";
-import { telemetryExport, telemetryRefusal } from "./telemetry.js";
+import { scanOnlyTelemetryControl } from "./telemetry-control.js";
 
 // Identification, not branding: the row names the thing it invokes.
 export const CLAUDE_PROVIDER = "claude";
 
 export class ClaudeDshAdapter extends LlmAdapter {
-  constructor({ runtime, ready, linkStore = null, logger = console }) {
+  constructor({ runtime, ready, linkStore = null, logger = console, telemetry = scanOnlyTelemetryControl() }) {
     super();
+    this.telemetry = telemetry;
     this.runtime = runtime;
     this.ready = ready;
     this.logger = logger;
@@ -160,7 +161,7 @@ export class ClaudeDshAdapter extends LlmAdapter {
   }
 
   async *stream(options) {
-    refuseWhileExporting();
+    await this.telemetry.enforce();
     if (options.purpose) {
       yield* this.streamAuxiliary(options);
       return;
@@ -331,7 +332,7 @@ export class ClaudeDshAdapter extends LlmAdapter {
   }
 
   async *streamAuxiliary(options) {
-    refuseWhileExporting();
+    await this.telemetry.enforce();
     await this.ready;
     const text = auxiliaryInput(options.messages);
     if (!text) throw new Error(`Relay Claude adapter received no ${options.purpose} input`);
@@ -658,17 +659,6 @@ function latestUserIndex(messages) {
     if (fallback === -1) fallback = index;
   }
   return fallback;
-}
-
-/**
- * Refuse before a single token reaches Claude. DSH's exporter ships unredacted
- * session records, so a turn taken while it is on would put Claude's output on
- * a competitor's collector. The throw becomes DSH's terminal error chunk and
- * renders inline in the conversation.
- */
-function refuseWhileExporting() {
-  const exporting = telemetryExport();
-  if (exporting) throw new Error(telemetryRefusal(exporting));
 }
 
 /**
