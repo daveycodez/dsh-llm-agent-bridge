@@ -93,6 +93,21 @@ Two things that remain your responsibility:
   entirely. Don't tunnel DSH.
 - **Use an API key for unattended workloads.** Subscription limits assume
   "ordinary, individual usage"; batch or scheduled runs belong on a key.
+- **Leave DSH's telemetry off.** `@deepseek-ai/dsh-base` mounts an OTLP exporter
+  pointed at `harness-telemetry.deepseeksvc.com`. It defaults to `DISABLED` and
+  stays off unless you set `DSH_TELEMETRY_MODE`, but DSH's own note says
+  uploading mirrors session-log records "with no session-telemetry/record
+  redaction rule, so exports are the raw captured copy." With this plugin
+  installed, that raw copy contains Claude's outputs — and Anthropic's Consumer
+  Terms prohibit using the Services to develop or train competing models. Don't
+  set `DSH_TELEMETRY_MODE`; to opt out irrevocably, set `DSH_TELEMETRY_DISABLED`
+  to any non-empty value, which patches the row off entirely.
+
+  Check your own posture:
+
+  ```bash
+  env | grep DSH_TELEMETRY; grep -i telemetry "${DSH_HOME:-$HOME/.dsh}/settings.yaml"
+  ```
 
 ## Credits
 
