@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
@@ -37,3 +38,19 @@ class FakeClaudeClient extends EventEmitter {
   async listModels() { return [{ id: "claude-test", isDefault: true }]; }
   async close() { this.closed = true; }
 }
+
+test("every service the plugin dereferences at runtime is declared in inject", async () => {
+  const { inject } = await import("../host-plugin.js");
+  const sources = await Promise.all(["../claude-tools.js", "../dsh-plugin.js", "../claude-adapter.js"]
+    .map(file => readFile(new URL(file, import.meta.url), "utf8")));
+
+  const used = new Set();
+  for (const source of sources) {
+    for (const [, name] of source.matchAll(/\bctx\.([a-zA-Z][a-zA-Z0-9]*)\b/g)) used.add(name);
+  }
+  used.delete("on"); used.delete("effect"); used.delete("logger"); used.delete("llm");
+
+  for (const name of used) {
+    assert.ok(inject.includes(name), `ctx.${name} is used but not declared in inject; cordis throws only when the line runs`);
+  }
+});
