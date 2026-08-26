@@ -352,3 +352,60 @@ async function collect(stream) {
   for await (const chunk of stream) chunks.push(chunk);
   return chunks;
 }
+
+test("a resumed turn that never speaks fails instead of stalling forever", async () => {
+  const runtime = new FakeRuntime();
+  runtime.resolveToolCall = function (toolUseId, result) {
+    this.resolved.push({ toolUseId, result });
+    return true; // accepted, but the turn never emits again
+  };
+  const adapter = new ClaudeDshAdapter({ runtime, ready: Promise.resolve() });
+  const agent = fakeAgent();
+  adapter.attachAgent(agent);
+
+  const messages = [{ role: "user", source: { kind: "user" }, content: [{ type: "text", text: "go" }] }];
+  const request = {
+    provider: "claude",
+    sessionId: agent.id,
+    messages,
+    tools: [{ name: "bash", description: "run", parameters: { type: "object", properties: {} } }],
+  };
+  const first = await collect(adapter.stream(request));
+  const call = first.find(chunk => chunk.type === "block-end" && chunk.block.type === "tool-call");
+
+  process.env.DSH_AGENT_BRIDGE_RESUME_TIMEOUT_MS = "80";
+  try {
+    await assert.rejects(
+      () => collect(adapter.stream({
+        ...request,
+        messages: [...messages, { role: "user", content: [{ type: "tool-result", toolCallId: call.block.id, content: [{ type: "text", text: "ok" }] }] }],
+      })),
+      /did not respond within/,
+    );
+  } finally {
+    delete process.env.DSH_AGENT_BRIDGE_RESUME_TIMEOUT_MS;
+  }
+});
+
+test("a result nothing is waiting for fails the turn rather than parking it", async () => {
+  const runtime = new FakeRuntime();
+  runtime.resolveToolCall = () => false;
+  const adapter = new ClaudeDshAdapter({ runtime, ready: Promise.resolve() });
+  const agent = fakeAgent();
+  adapter.attachAgent(agent);
+
+  const messages = [{ role: "user", source: { kind: "user" }, content: [{ type: "text", text: "go" }] }];
+  const request = {
+    provider: "claude",
+    sessionId: agent.id,
+    messages,
+    tools: [{ name: "bash", description: "run", parameters: { type: "object", properties: {} } }],
+  };
+  const first = await collect(adapter.stream(request));
+  const call = first.find(chunk => chunk.type === "block-end" && chunk.block.type === "tool-call");
+
+  await assert.rejects(() => collect(adapter.stream({
+    ...request,
+    messages: [...messages, { role: "user", content: [{ type: "tool-result", toolCallId: call.block.id, content: [] }] }],
+  })), /No Claude tool call is waiting/);
+});

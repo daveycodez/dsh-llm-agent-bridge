@@ -65,6 +65,21 @@ DeepSeek turn sees the actual work rather than a prose summary.
 One known limit: **DSH-side rewrites are not replayed.** If DSH compacts or edits
 earlier turns after Claude has seen them, the Claude session keeps the original.
 
+## Tracing a stalled turn
+
+The handoff spans two `stream()` calls with a live Claude query parked between
+them, so a stall has no stack to show. Set `DSH_AGENT_BRIDGE_DEBUG=1` to record
+each decision to `$DSH_HOME/plugin-data/agent-bridge-debug.log` (or give it a
+path of your own):
+
+```bash
+DSH_AGENT_BRIDGE_DEBUG=1 dsh web
+```
+
+Each line names the parked call ids and the tool-result ids that came back, so a
+mismatch is visible directly. A resumed turn that stays silent fails after five
+minutes rather than hanging; `DSH_AGENT_BRIDGE_RESUME_TIMEOUT_MS` overrides that.
+
 ## Anthropic terms compliance
 
 This plugin uses your Claude subscription the way Anthropic's

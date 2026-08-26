@@ -1,4 +1,5 @@
 import { LlmAdapter } from "@deepseek-ai/dsh-llm";
+import { debugLog } from "./debug.js";
 import { dshToolResult } from "./sdk-client.mjs";
 import { telemetryExport, telemetryRefusal } from "./telemetry.js";
 
@@ -176,15 +177,32 @@ export class ClaudeDshAdapter extends LlmAdapter {
     // back with the results, so the same Claude query continues rather than a
     // new one starting.
     const suspended = this.suspended.get(sessionId);
+    debugLog("stream", {
+      sessionId,
+      messages: options.messages?.length ?? 0,
+      tools: options.tools?.length ?? 0,
+      suspended: suspended ? suspended.calls : null,
+      toolResultIds: allToolResultIds(options.messages),
+    });
     if (suspended) {
       const results = toolResultsFor(options.messages, suspended.calls);
       if (results.length) {
+        debugLog("resume", { sessionId, turnId: suspended.turnId, resolving: results.map(result => result.toolCallId) });
         yield* this.runTurn(agent, sessionId, suspended.claudeSessionId, options, async () => {
-          for (const result of results) this.runtime.resolveToolCall(result.toolCallId, dshToolResult(result));
+          for (const result of results) {
+            const delivered = this.runtime.resolveToolCall(result.toolCallId, dshToolResult(result));
+            debugLog("resolve", { toolCallId: result.toolCallId, delivered });
+            if (!delivered) {
+              // Nothing is waiting on this id, so nothing will ever wake the
+              // turn. Fail now rather than stalling for the user to notice.
+              throw new Error(`No Claude tool call is waiting for result ${result.toolCallId}; the turn cannot be resumed`);
+            }
+          }
           return suspended.turnId;
-        });
+        }, { firstEventTimeoutMs: resumeTimeoutMs() });
         return;
       }
+      debugLog("abandon", { sessionId, turnId: suspended.turnId, expected: suspended.calls });
       // No results for the calls we parked: the turn was abandoned (interrupted,
       // or the user typed over it). Release Claude before starting a new one.
       await this.abandonTurn(sessionId, suspended);
@@ -219,7 +237,7 @@ export class ClaudeDshAdapter extends LlmAdapter {
    * recorded in its trajectory — and then calls back into `stream()` with the
    * results, which resume the same Claude query.
    */
-  async *runTurn(agent, sessionId, claudeSessionId, options, start) {
+  async *runTurn(agent, sessionId, claudeSessionId, options, start, { firstEventTimeoutMs = 0 } = {}) {
     const queue = new ActivityQueue(options.signal, "Claude");
     const onActivity = (message) => {
       const candidate = message.params?.sessionId ?? message.params?.session?.id;
@@ -231,11 +249,19 @@ export class ClaudeDshAdapter extends LlmAdapter {
     let turnId = null;
     try {
       turnId = await start();
+      debugLog("turn/started", { sessionId, claudeSessionId, turnId });
       const state = createStreamState();
       let completedTurn = null;
       let batch = null;
+      let first = true;
       while (!completedTurn && !batch) {
-        const message = await queue.next();
+        // A resumed turn that never speaks again is the one failure with no
+        // stack to show for it: the query is parked inside the SDK. Bound the
+        // first wait so it surfaces as an error the user can act on.
+        const message = await (first && firstEventTimeoutMs
+          ? withTimeout(queue.next(), firstEventTimeoutMs, `Claude did not respond within ${Math.round(firstEventTimeoutMs / 1000)}s of the tool result being delivered`)
+          : queue.next());
+        first = false;
         const params = message.params ?? {};
         if (params.turnId && params.turnId !== turnId) continue;
         if (message.method === "turn/completed") {
@@ -268,6 +294,7 @@ export class ClaudeDshAdapter extends LlmAdapter {
           yield { type: "block-end", index, block: { type: "tool-call", id: call.id, name: call.name, arguments: call.arguments } };
         }
         this.suspended.set(sessionId, { claudeSessionId, turnId, calls: calls.map(call => call.id) });
+        debugLog("handoff", { sessionId, turnId, calls: calls.map(call => ({ id: call.id, name: call.name })) });
         yield { type: "finish", reason: { kind: "tool-calls" } };
         return;
       }
@@ -281,9 +308,11 @@ export class ClaudeDshAdapter extends LlmAdapter {
       } else {
         this.seen.set(sessionId, options.messages.length);
         this.persistLink(sessionId);
+        debugLog("finish", { sessionId, turnId, kind: "stop" });
         yield { type: "finish", reason: { kind: "stop" }, replayState: { claudeSessionId, turnId } };
       }
     } catch (error) {
+      debugLog("turn/error", { sessionId, turnId, aborted: Boolean(options.signal?.aborted), message: String(error?.message ?? error) });
       if (options.signal?.aborted) {
         if (turnId) await this.abandonTurn(sessionId, { claudeSessionId, turnId });
         yield { type: "finish", reason: { kind: "aborted", failure: { message: "Claude turn cancelled", code: "ABORTED" } } };
@@ -489,6 +518,17 @@ function drainParkedToolCalls(queue, turnId) {
   return parked;
 }
 
+/** Every tool-result id present, for tracing a mismatch against what was parked. */
+function allToolResultIds(messages) {
+  const ids = [];
+  for (const message of messages ?? []) {
+    for (const block of message?.content ?? []) {
+      if (block?.type === "tool-result") ids.push(block.toolCallId);
+    }
+  }
+  return ids;
+}
+
 /** The results DSH executed for the calls this turn parked on. */
 function toolResultsFor(messages, callIds) {
   const wanted = new Set(callIds);
@@ -500,6 +540,22 @@ function toolResultsFor(messages, callIds) {
     }
   }
   return results;
+}
+
+/** How long a resumed turn may stay silent before it is called a failure. */
+function resumeTimeoutMs() {
+  const configured = Number.parseInt((process.env.DSH_AGENT_BRIDGE_RESUME_TIMEOUT_MS ?? "").trim(), 10);
+  return Number.isSafeInteger(configured) && configured > 0 ? configured : 300_000;
+}
+
+function withTimeout(promise, ms, message) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      value => { clearTimeout(timer); resolve(value); },
+      error => { clearTimeout(timer); reject(error); },
+    );
+  });
 }
 
 function closeOpenBlocks(state) {
