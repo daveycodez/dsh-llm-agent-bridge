@@ -221,7 +221,7 @@ export class ClaudeSdkClient extends EventEmitter {
       includePartialMessages: true,
       ...(session.created ? { resume: session.id } : { sessionId: session.id }),
       canUseTool: (toolName, input, options) => this.requestPermission(session.id, toolName, input, options),
-      ...dshMcpOptions(this.sdk, message.dshTools, message.executeDshTool, abortController.signal),
+      ...dshMcpOptions(this.sdk, message, abortController.signal),
     };
   }
 
@@ -286,7 +286,9 @@ export class ClaudeSdkClient extends EventEmitter {
   }
 }
 
-function dshMcpOptions(sdk, schemas, execute, signal) {
+function dshMcpOptions(sdk, message, signal) {
+  const schemas = message.dshTools;
+  const execute = message.executeDshTool;
   if (!Array.isArray(schemas) || schemas.length === 0) return {};
   if (typeof execute !== "function") throw new Error("Claude DSH tools require an execution callback");
   if (typeof sdk.createSdkMcpServer !== "function" || typeof sdk.tool !== "function") {
@@ -307,7 +309,12 @@ function dshMcpOptions(sdk, schemas, execute, signal) {
     mcpServers: {
       dsh: sdk.createSdkMcpServer({ name: "dsh", version: "1.0.0", tools, alwaysLoad: true }),
     },
-    allowedTools: schemas.map(schema => `mcp__dsh__${schema.name}`),
+    // Only pre-approve when DSH's policy is "never ask". A bare allowedTools
+    // entry auto-approves the tool *before* canUseTool runs, which silently
+    // bypasses DSH's approval prompt — the SDK warns about exactly this.
+    ...(message.approvalPolicy === "never"
+      ? { allowedTools: schemas.map(schema => `mcp__dsh__${schema.name}`) }
+      : {}),
     // DSH's prompt names its tools bare ("use the read tool"), so a model that
     // emits `Read` or `Bash` is following instructions, not hallucinating.
     // Route those names at the DSH tool of the same name instead of failing.

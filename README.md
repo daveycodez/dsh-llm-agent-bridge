@@ -23,7 +23,10 @@ that adapter:
    `allowedTools` alone only pre-approves, it does not scope, and the built-ins
    would win. `toolAliases` redirects built-in names at the DSH tool of the same
    name, since DSH's prompt refers to its tools bare ("use the read tool").
-   Claude's permission requests surface as DSH's own approval prompts.
+   Claude's permission requests surface as DSH's own approval prompts: the
+   bridged tools are deliberately *not* listed in `allowedTools` unless DSH's
+   policy is never-ask, because a bare `allowedTools` entry auto-approves the
+   tool before `canUseTool` runs and would silently bypass the prompt.
 4. Projects Claude's reasoning, text, and tool activity into DSH's native stream
    chunk vocabulary, so the conversation renders like any other model's.
 

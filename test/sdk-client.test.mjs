@@ -163,7 +163,7 @@ test("Claude SDK maps generic DSH schemas to an in-process MCP server", async ()
   await untilTurnCompleted(activity);
 
   assert.deepEqual(Object.keys(queryParams.options.mcpServers), ["dsh"]);
-  assert.deepEqual(queryParams.options.allowedTools, ["mcp__dsh__cross_plugin_probe"]);
+  assert.equal(queryParams.options.allowedTools, undefined, "default policy must fall through to canUseTool");
   assert.equal(serverOptions.tools[0].name, "cross_plugin_probe");
   assert.equal(serverOptions.tools[0].inputSchema.value.isOptional(), false);
   assert.equal(serverOptions.tools[0].inputSchema.count.isOptional(), true);
@@ -281,6 +281,25 @@ test("Claude Code's own tools are removed from context so DSH owns the toolset",
   });
 
   assert.deepEqual(captured.tools, [], "no built-in tools may remain in context");
-  assert.deepEqual(captured.allowedTools, ["mcp__dsh__bash"]);
   assert.deepEqual(captured.toolAliases, { Bash: "mcp__dsh__bash" });
+  assert.equal(captured.allowedTools, undefined, "pre-approval would bypass DSH's approval prompt");
+});
+
+test("DSH tools are pre-approved only when DSH's policy is never-ask", async () => {
+  let captured = null;
+  const sdk = {
+    query(params) { captured = params.options; return Object.assign((async function* () {})(), { close() {}, interrupt: async () => {} }); },
+    createSdkMcpServer: config => ({ config }),
+    tool: (name, description, shape, handler) => ({ name, description, shape, handler }),
+  };
+  const client = new ClaudeSdkClient({ sdk });
+  const session = await client.createSession({ sessionId: "s2", cwd: "/workspace" });
+  await client.sendMessage(session.id, {
+    text: "hi",
+    approvalPolicy: "never",
+    dshTools: [{ name: "bash", description: "run", parameters: { type: "object", properties: {}, required: [] } }],
+    executeDshTool: async () => ({ content: [] }),
+  });
+
+  assert.deepEqual(captured.allowedTools, ["mcp__dsh__bash"]);
 });
