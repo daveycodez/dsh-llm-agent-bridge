@@ -155,10 +155,6 @@ test("Claude SDK maps generic DSH schemas to an in-process MCP server", async ()
         required: ["value"],
       },
     }],
-    async executeDshTool(input) {
-      calls.push(input);
-      return { isError: false, content: [{ type: "text", text: "probe complete" }] };
-    },
   });
   await untilTurnCompleted(activity);
 
@@ -167,10 +163,40 @@ test("Claude SDK maps generic DSH schemas to an in-process MCP server", async ()
   assert.equal(serverOptions.tools[0].name, "cross_plugin_probe");
   assert.equal(serverOptions.tools[0].inputSchema.value.isOptional(), false);
   assert.equal(serverOptions.tools[0].inputSchema.count.isOptional(), true);
-  const result = await serverOptions.tools[0].handler({ value: "ok" }, { signal: new AbortController().signal });
-  assert.deepEqual(calls[0].arguments, { value: "ok" });
-  assert.equal(result.isError, false);
+  // The handler parks and announces itself; the harness runs the tool and the
+  // result comes back through resolveToolCall.
+  const parked = [];
+  client.on("activity", message => { if (message.method === "tool/parked") parked.push(message.params); });
+  const pending = serverOptions.tools[0].handler({ value: "ok" }, { signal: new AbortController().signal });
+  let settled = false;
+  void pending.then(() => { settled = true; });
+  await Promise.resolve();
+
+  assert.equal(settled, false, "the call must wait for the harness");
+  assert.equal(calls.length, 0, "the plugin must not execute DSH's tools itself");
+  assert.equal(parked.length, 1, "a parked call must be announced or the harness never learns of it");
+  assert.equal(parked[0].name, "cross_plugin_probe");
+  assert.deepEqual(parked[0].arguments, { value: "ok" });
+
+  client.resolveToolCall(parked[0].parkId, { content: [{ type: "text", text: "probe complete" }], isError: false });
+  const result = await pending;
   assert.deepEqual(result.content, [{ type: "text", text: "probe complete" }]);
+  assert.equal(result.isError, false);
+});
+
+test("a result for an unknown call is refused rather than silently swallowed", () => {
+  const client = new ClaudeSdkClient({ sdk: {} });
+
+  assert.equal(client.resolveToolCall("never-parked", { content: [] }), false);
+});
+
+test("abandoning a turn fails every parked call instead of hanging it", async () => {
+  const client = new ClaudeSdkClient({ sdk: {} });
+  const parked = client.parkToolCall("session-1", "turn-1", "bash", { command: "pwd" });
+
+  client.rejectAllToolCalls(new Error("turn abandoned"));
+
+  await assert.rejects(() => parked, /turn abandoned/);
 });
 
 test("Claude SDK client interrupts and aborts an in-progress query", async () => {
@@ -248,7 +274,7 @@ test("the catalog drops the default row and names models from their canonical id
   assert.equal(models.every(model => model.description === undefined), true);
   assert.equal(models[0].isDefault, true, "the recommendation carried by the default row moves onto its named twin");
   assert.deepEqual(models[1].supportedReasoningEfforts.map(effort => effort.reasoningEffort), ["low", "high"]);
-  assert.equal(models[1].defaultReasoningEffort, "low");
+  assert.equal(models[1].defaultReasoningEffort, undefined, "the SDK reports no default effort, so none is invented");
   assert.equal(models[2].supportedReasoningEfforts, undefined);
   assert.equal(closed, true);
 });

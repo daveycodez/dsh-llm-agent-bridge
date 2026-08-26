@@ -5,24 +5,27 @@ import { ClaudeDshAdapter } from "../claude-adapter.js";
 import { TELEMETRY_ENDPOINT_DEFAULT, telemetryExport } from "../telemetry.js";
 
 test("telemetry detection mirrors dsh-base's own row semantics", () => {
-  assert.equal(telemetryExport({}), null, "unset means disabled");
-  assert.equal(telemetryExport({ DSH_TELEMETRY_MODE: "DISABLED" }), null);
-  assert.equal(telemetryExport({ DSH_TELEMETRY_MODE: "disabled" }), null, "case must not decide it");
-  assert.equal(telemetryExport({ DSH_TELEMETRY_MODE: "  " }), null);
+  const none = () => "";
+  assert.equal(telemetryExport({}, none), null, "unset means disabled");
+  assert.equal(telemetryExport({ DSH_TELEMETRY_MODE: "DISABLED" }, none), null);
+  assert.equal(telemetryExport({ DSH_TELEMETRY_MODE: "disabled" }, none), null, "case must not decide it");
+  assert.equal(telemetryExport({ DSH_TELEMETRY_MODE: "  " }, none), null);
 
-  assert.deepEqual(telemetryExport({ DSH_TELEMETRY_MODE: "FULL" }), {
+  assert.deepEqual(telemetryExport({ DSH_TELEMETRY_MODE: "FULL" }, none), {
     mode: "FULL",
     endpoint: TELEMETRY_ENDPOINT_DEFAULT,
+    source: "DSH_TELEMETRY_MODE",
   });
-  assert.deepEqual(telemetryExport({ DSH_TELEMETRY_MODE: "FEEDBACK_ONLY", DSH_TELEMETRY_OTLP_URL: "http://localhost:4318/v1/logs" }), {
+  assert.deepEqual(telemetryExport({ DSH_TELEMETRY_MODE: "FEEDBACK_ONLY", DSH_TELEMETRY_OTLP_URL: "http://localhost:4318/v1/logs" }, none), {
     mode: "FEEDBACK_ONLY",
     endpoint: "http://localhost:4318/v1/logs",
+    source: "DSH_TELEMETRY_MODE",
   });
 
   // dsh-base: "A non-empty DSH_TELEMETRY_DISABLED - any value, including
   // '0'/'false' - opts the process out".
   for (const value of ["1", "0", "false", "no"]) {
-    assert.equal(telemetryExport({ DSH_TELEMETRY_MODE: "FULL", DSH_TELEMETRY_DISABLED: value }), null, `DSH_TELEMETRY_DISABLED=${value} must opt out`);
+    assert.equal(telemetryExport({ DSH_TELEMETRY_MODE: "FULL", DSH_TELEMETRY_DISABLED: value }, none), null, `DSH_TELEMETRY_DISABLED=${value} must opt out`);
   }
 });
 
@@ -46,4 +49,28 @@ test("no turn reaches Claude while DSH is exporting session records", async () =
     if (previous === undefined) delete process.env.DSH_TELEMETRY_MODE;
     else process.env.DSH_TELEMETRY_MODE = previous;
   }
+});
+
+test("a config layer can enable the exporter where the environment cannot see it", () => {
+  const settings = "session-telemetry-otel:\n  mode: FULL\n  exporter:\n    compression: gzip\n";
+  const found = telemetryExport({ DSH_HOME: "/tmp/dsh" }, () => settings);
+
+  assert.equal(found.mode, "FULL");
+  assert.match(found.source, /settings\.yaml|cordis\.patch\.yml/, "the refusal must say where it was switched on");
+});
+
+test("config scanning does not fire on the shipped default row", () => {
+  // dsh-base's own row defers to the environment; that is not an opt-in.
+  const patch = "- id: session-telemetry-otel\n  config:\n    mode: !!js process.env.DSH_TELEMETRY_MODE || 'DISABLED'\n";
+  assert.equal(telemetryExport({}, () => patch), null);
+
+  const off = "- id: session-telemetry-otel\n  disabled: true\n  config:\n    mode: FULL\n";
+  assert.equal(telemetryExport({}, () => off), null, "a disabled row exports nothing whatever its mode says");
+
+  assert.equal(telemetryExport({}, () => "session-telemetry-otel:\n  mode: DISABLED\n"), null);
+});
+
+test("the hard opt-out beats every config layer", () => {
+  const settings = "session-telemetry-otel:\n  mode: FULL\n";
+  assert.equal(telemetryExport({ DSH_TELEMETRY_DISABLED: "0" }, () => settings), null);
 });

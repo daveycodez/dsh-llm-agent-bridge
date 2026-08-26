@@ -23,17 +23,24 @@ that adapter:
    `allowedTools` alone only pre-approves, it does not scope, and the built-ins
    would win. `toolAliases` redirects built-in names at the DSH tool of the same
    name, since DSH's prompt refers to its tools bare ("use the read tool").
+4. **Hands tool calls back to DSH to execute.** The MCP handler does no work: it
+   parks, announces the call, and the adapter emits it as a DSH `tool-call`
+   chunk with a `tool-calls` finish. DSH's own agent loop then runs the tool
+   under its sandbox and approval policy, records `tool/call` and `tool/result`
+   in its trajectory, opens the next step, and calls back with the result —
+   which resumes the same Claude query rather than starting a new one.
    The bridged tools *are* listed in `allowedTools`, which pre-approves them at
    the SDK layer on purpose: they run through DSH's tool runtime, which resolves
    "ask" decisions through its own approval seam against the session's sandbox
    policy. Gating at the SDK layer as well would prompt on every call regardless
    of that policy — workspace-write included — which is not how DSH treats its
    own agent's calls.
-4. Projects Claude's reasoning, text, and tool activity into DSH's native stream
-   chunk vocabulary, so the conversation renders like any other model's.
+5. Projects Claude's reasoning and text into DSH's native stream chunk
+   vocabulary, so the conversation renders like any other model's.
 
-Claude keeps its own agent loop *within* a DSH turn: it calls a tool, reads the
-result, decides again, and returns one answer. DSH's own loop sits out.
+Claude still decides what to call and when; DSH executes. One DSH step per model
+call, exactly as with DSH's own models — which is what puts Claude's tool calls
+in the trajectory and keeps the conversation history shared between providers.
 
 ## Install
 
@@ -52,14 +59,11 @@ another model answered turns while it was deselected, the adapter prepends those
 turns as a `<dsh-session-history>` block so switching providers mid-session does
 not silently drop context.
 
-Two known limits:
+Tool calls and their results live in DSH's own message history, so a later
+DeepSeek turn sees the actual work rather than a prose summary.
 
-- **Tool work is not shared history.** Claude's tool calls render in the DSH
-  conversation as activity events, but are not written into the message history
-  other models read. A later DeepSeek turn sees Claude's prose, not the
-  individual edits.
-- **DSH-side rewrites are not replayed.** If DSH compacts or edits earlier turns
-  after Claude has seen them, the Claude session keeps the original.
+One known limit: **DSH-side rewrites are not replayed.** If DSH compacts or edits
+earlier turns after Claude has seen them, the Claude session keeps the original.
 
 ## Anthropic terms compliance
 

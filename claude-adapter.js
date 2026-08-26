@@ -1,4 +1,5 @@
 import { LlmAdapter } from "@deepseek-ai/dsh-llm";
+import { dshToolResult } from "./sdk-client.mjs";
 import { telemetryExport, telemetryRefusal } from "./telemetry.js";
 
 // Identification, not branding: the row names the thing it invokes. The
@@ -19,6 +20,8 @@ export class ClaudeDshAdapter extends LlmAdapter {
     this.pendingSessions = new Map();
     this.agents = new Map();
     this.seen = new Map();
+    // DSH sessions whose Claude turn is parked on tool calls DSH is executing.
+    this.suspended = new Map();
     for (const [sessionId, record] of linkStore?.entries() ?? []) {
       const claudeSessionId = record.claudeSessionId ?? record.sessionId ?? record.threadId;
       if (claudeSessionId) this.links.set(sessionId, claudeSessionId);
@@ -83,7 +86,7 @@ export class ClaudeDshAdapter extends LlmAdapter {
     const model = models.find(candidate => candidate.isDefault) ?? models[0];
     const config = {
       model: model?.id ?? "sonnet",
-      effort: model?.defaultReasoningEffort ?? "medium",
+      effort: model?.defaultReasoningEffort,
       sandbox: "workspace-write",
       approvalPolicy: "on-request",
       cwd: cwd ?? process.cwd(),
@@ -165,12 +168,31 @@ export class ClaudeDshAdapter extends LlmAdapter {
       return;
     }
     const sessionId = String(options.sessionId ?? "");
-    if (!sessionId) throw new Error("Relay Claude adapter requires a DSH session id");
+    if (!sessionId) throw new Error("The Claude adapter requires a DSH session id");
+    const agent = this.agents.get(sessionId);
+    if (!agent) throw new Error(`The Claude adapter has no attached agent for ${sessionId}`);
+
+    // A turn suspended on tool calls resumes here: DSH ran them and is calling
+    // back with the results, so the same Claude query continues rather than a
+    // new one starting.
+    const suspended = this.suspended.get(sessionId);
+    if (suspended) {
+      const results = toolResultsFor(options.messages, suspended.calls);
+      if (results.length) {
+        yield* this.runTurn(agent, sessionId, suspended.claudeSessionId, options, async () => {
+          for (const result of results) this.runtime.resolveToolCall(result.toolCallId, dshToolResult(result));
+          return suspended.turnId;
+        });
+        return;
+      }
+      // No results for the calls we parked: the turn was abandoned (interrupted,
+      // or the user typed over it). Release Claude before starting a new one.
+      await this.abandonTurn(sessionId, suspended);
+    }
+
     const instruction = latestUserIndex(options.messages);
     const text = instruction === -1 ? "" : messageText(options.messages[instruction]);
     if (!text) throw new Error("The Claude adapter received no user text");
-    const agent = this.agents.get(sessionId);
-    if (!agent) throw new Error(`Relay Claude adapter has no attached agent for ${sessionId}`);
     const nativePermissions = permissionConfiguration(agent.session.events);
     const config = this.configure(sessionId, {
       model: options.model,
@@ -180,52 +202,77 @@ export class ClaudeDshAdapter extends LlmAdapter {
       cwd: agent.session.header.cwd,
     });
     const dshTools = structuredClone(options.tools ?? []);
-    const availableTools = new Set(dshTools.map(tool => tool.name));
-    const executeDshTool = async ({ name, arguments: args, callId, signal }) => {
-      if (!availableTools.has(name)) throw new Error(`DSH tool ${name} is not available for this DSH turn.`);
-      if (!agent.ctx?.tools?.execute) throw new Error("The owning DSH Agent has no tool runtime");
-      return agent.ctx.tools.execute({
-        callId,
-        name,
-        arguments: args,
-        agent,
-        signal: signal ?? options.signal ?? new AbortController().signal,
-      });
-    };
     const claudeSessionId = await this.ensureSession(sessionId);
     const prompt = this.seedPrompt(sessionId, options.messages, instruction, text);
+    yield* this.runTurn(agent, sessionId, claudeSessionId, options, async () => {
+      const started = await this.runtime.sendMessage(claudeSessionId, { text: prompt, ...config, dshTools });
+      return started.id;
+    });
+  }
+
+  /**
+   * Project one DSH step of a Claude turn.
+   *
+   * A step ends one of two ways: Claude finishes, or it calls tools. Tool calls
+   * are handed to DSH as `tool-call` chunks with a `tool-calls` finish, so DSH's
+   * own agent loop executes them — under its sandbox and approval policy, and
+   * recorded in its trajectory — and then calls back into `stream()` with the
+   * results, which resume the same Claude query.
+   */
+  async *runTurn(agent, sessionId, claudeSessionId, options, start) {
     const queue = new ActivityQueue(options.signal, "Claude");
     const onActivity = (message) => {
       const candidate = message.params?.sessionId ?? message.params?.session?.id;
       if (candidate === claudeSessionId) queue.push(message);
     };
+    // Subscribe before starting or resuming: a runtime that emits synchronously
+    // would otherwise deliver the whole turn before anyone is listening.
     const stopActivity = subscribeRuntimeActivity(this.runtime, onActivity);
-
     let turnId = null;
     try {
-      const started = await this.runtime.sendMessage(claudeSessionId, { text: prompt, ...config, dshTools, executeDshTool });
-      turnId = started.id;
+      turnId = await start();
       const state = createStreamState();
       let completedTurn = null;
-      while (!completedTurn) {
+      let batch = null;
+      while (!completedTurn && !batch) {
         const message = await queue.next();
         const params = message.params ?? {};
         if (params.turnId && params.turnId !== turnId) continue;
         if (message.method === "turn/completed") {
           if (params.turn?.id !== turnId) continue;
           for (const item of params.turn.items ?? []) {
-            for (const chunk of this.completeItem(agent, claudeSessionId, turnId, item, state)) yield chunk;
+            for (const chunk of this.completeItem(item, state)) yield chunk;
           }
           completedTurn = params.turn;
           break;
         }
-        for (const chunk of this.projectActivity(agent, claudeSessionId, turnId, message, state)) yield chunk;
+        if (isToolParked(message)) {
+          batch = [message.params, ...drainParkedToolCalls(queue, turnId)];
+          break;
+        }
+        for (const chunk of this.projectActivity(message, state)) yield chunk;
       }
-      for (const block of state.blocks.values()) {
-        if (block.closed) continue;
-        block.closed = true;
-        yield { type: "block-end", index: block.index, block: { type: block.type, text: block.text } };
+
+      for (const chunk of closeOpenBlocks(state)) yield chunk;
+
+      if (batch) {
+        const calls = batch.map(parked => ({
+          id: parked.parkId,
+          name: parked.name,
+          arguments: JSON.stringify(parked.arguments ?? {}),
+        }));
+        for (const call of calls) {
+          const index = state.nextIndex++;
+          yield { type: "block-start", index, blockType: "tool-call" };
+          yield { type: "tool-call-delta", index, id: call.id, name: call.name, argumentsDelta: call.arguments };
+          yield { type: "block-end", index, block: { type: "tool-call", id: call.id, name: call.name, arguments: call.arguments } };
+        }
+        this.suspended.set(sessionId, { claudeSessionId, turnId, calls: calls.map(call => call.id) });
+        yield { type: "finish", reason: { kind: "tool-calls" } };
+        return;
       }
+
+      this.suspended.delete(sessionId);
       if (completedTurn.status === "failed") {
         yield {
           type: "finish",
@@ -238,15 +285,23 @@ export class ClaudeDshAdapter extends LlmAdapter {
       }
     } catch (error) {
       if (options.signal?.aborted) {
-        if (turnId) await this.runtime.interruptTurn(claudeSessionId, turnId).catch(() => {});
+        if (turnId) await this.abandonTurn(sessionId, { claudeSessionId, turnId });
         yield { type: "finish", reason: { kind: "aborted", failure: { message: "Claude turn cancelled", code: "ABORTED" } } };
         return;
       }
+      this.suspended.delete(sessionId);
       throw error;
     } finally {
       stopActivity();
       queue.close();
     }
+  }
+
+  /** Release a Claude turn nobody is going to finish, and unpark its tool calls. */
+  async abandonTurn(sessionId, { claudeSessionId, turnId }) {
+    this.suspended.delete(sessionId);
+    this.runtime.rejectAllToolCalls?.(new Error("The DSH turn was abandoned before the tool result arrived"));
+    if (turnId) await this.runtime.interruptTurn(claudeSessionId, turnId).catch(() => {});
   }
 
   async *streamAuxiliary(options) {
@@ -344,7 +399,7 @@ export class ClaudeDshAdapter extends LlmAdapter {
     ].join("\n");
   }
 
-  projectActivity(agent, claudeSessionId, turnId, message, state) {
+  projectActivity(message, state) {
     const params = message.params ?? {};
     if (message.method === "item/reasoning/summaryTextDelta" || message.method === "item/reasoning/textDelta") {
       return textDelta(state, params.itemId, "reasoning", params.delta ?? "");
@@ -352,42 +407,18 @@ export class ClaudeDshAdapter extends LlmAdapter {
     if (message.method === "item/agentMessage/delta") {
       return textDelta(state, params.itemId, "text", params.delta ?? "");
     }
-    if (message.method === "item/started") {
-      if (isActivityItem(params.item)) this.appendActivity(agent, claudeSessionId, turnId, params.item, "started", state);
-      return [];
-    }
-    if (message.method === "item/completed") return this.completeItem(agent, claudeSessionId, turnId, params.item, state);
+    if (message.method === "item/completed") return this.completeItem(params.item, state);
     return [];
   }
 
-  completeItem(agent, claudeSessionId, turnId, item, state) {
+  completeItem(item, state) {
     if (!item?.id || state.completed.has(item.id)) return [];
     state.completed.add(item.id);
     if (item.type === "reasoning") return completeTextItem(state, item.id, "reasoning", reasoningText(item));
     if (item.type === "agentMessage") return completeTextItem(state, item.id, "text", item.text ?? "");
-    if (isActivityItem(item)) this.appendActivity(agent, claudeSessionId, turnId, item, "completed", state);
+    // Tool items are DSH's to render: it executed them and recorded them in its
+    // own trajectory.
     return [];
-  }
-
-  appendActivity(agent, claudeSessionId, turnId, item, phase, state) {
-    const previous = state.activityItems.get(item.id) ?? {};
-    const merged = {
-      ...previous,
-      ...item,
-      input: item.input ?? previous.input,
-      arguments: item.arguments ?? previous.arguments,
-      name: item.name ?? previous.name,
-      tool: item.tool ?? previous.tool,
-    };
-    state.activityItems.set(item.id, merged);
-    if (!state.startedActivities.has(item.id)) {
-      state.startedActivities.add(item.id);
-      agent.session.append(CLAUDE_ACTIVITY_EVENT, activityPayload(claudeSessionId, turnId, merged, "started"));
-    }
-    if (phase === "completed" && !state.completedActivities.has(item.id)) {
-      state.completedActivities.add(item.id);
-      agent.session.append(CLAUDE_ACTIVITY_EVENT, activityPayload(claudeSessionId, turnId, merged, "completed"));
-    }
   }
 }
 
@@ -433,6 +464,52 @@ class ActivityQueue {
     this.closed = true;
     for (const waiter of this.waiters.splice(0)) waiter.reject(new Error(`${this.label} activity stream closed`));
   }
+}
+
+/** A tool call parked by the SDK bridge, waiting for DSH to run it. */
+function isToolParked(message) {
+  return message.method === "tool/parked" && Boolean(message.params?.parkId);
+}
+
+/**
+ * Claude can call several tools in one message, and the SDK reports them as
+ * separate events emitted in the same tick. Take the siblings already queued so
+ * the whole batch reaches DSH as one step, the way DSH's own loop handles a
+ * multi-call assistant message.
+ */
+function drainParkedToolCalls(queue, turnId) {
+  const parked = [];
+  while (queue.values.length) {
+    const next = queue.values[0];
+    if (!isToolParked(next)) break;
+    if (next.params?.turnId && next.params.turnId !== turnId) break;
+    queue.values.shift();
+    parked.push(next.params);
+  }
+  return parked;
+}
+
+/** The results DSH executed for the calls this turn parked on. */
+function toolResultsFor(messages, callIds) {
+  const wanted = new Set(callIds);
+  const results = [];
+  for (const message of messages ?? []) {
+    for (const block of message?.content ?? []) {
+      if (block?.type !== "tool-result" || !wanted.has(block.toolCallId)) continue;
+      results.push({ toolCallId: block.toolCallId, content: block.content ?? [], isError: Boolean(block.isError) });
+    }
+  }
+  return results;
+}
+
+function closeOpenBlocks(state) {
+  const chunks = [];
+  for (const block of state.blocks.values()) {
+    if (block.closed) continue;
+    block.closed = true;
+    chunks.push({ type: "block-end", index: block.index, block: { type: block.type, text: block.text } });
+  }
+  return chunks;
 }
 
 function createStreamState() {

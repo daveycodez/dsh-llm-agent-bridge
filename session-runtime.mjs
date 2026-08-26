@@ -145,6 +145,21 @@ export class ClaudeSessionRuntime extends EventEmitter {
     return structuredClone(turn);
   }
 
+  /** Hand a harness-executed tool result back to the parked call. */
+  resolveToolCall(toolUseId, result) {
+    return this.client.resolveToolCall?.(toolUseId, result) ?? false;
+  }
+
+  /** Fail one parked tool call. */
+  rejectToolCall(toolUseId, error) {
+    return this.client.rejectToolCall?.(toolUseId, error) ?? false;
+  }
+
+  /** Fail every parked tool call, e.g. when a turn is abandoned. */
+  rejectAllToolCalls(error) {
+    this.client.rejectAllToolCalls?.(error);
+  }
+
   async interruptTurn(sessionId, turnId) {
     await this.client.interruptTurn?.(sessionId, turnId);
   }

@@ -4,11 +4,17 @@ import { EventEmitter } from "node:events";
 import readline from "node:readline";
 
 const DEFAULT_MODELS = [
-  { id: "opus", displayName: "Opus 5", isDefault: true, defaultReasoningEffort: "high" },
-  { id: "fable", displayName: "Fable 5", isDefault: false, defaultReasoningEffort: "medium" },
-  { id: "sonnet", displayName: "Sonnet 5", isDefault: false, defaultReasoningEffort: "medium" },
-  { id: "haiku", displayName: "Haiku 4.5", isDefault: false, defaultReasoningEffort: "low" },
+  { id: "opus", displayName: "Opus 5", isDefault: true },
+  { id: "fable", displayName: "Fable 5", isDefault: false },
+  { id: "sonnet", displayName: "Sonnet 5", isDefault: false },
+  { id: "haiku", displayName: "Haiku 4.5", isDefault: false },
 ];
+
+/** Pass --effort only when a level was chosen, so the CLI's own default stands. */
+function effortArgs(message, session) {
+  const effort = message.effort ?? session.config?.effort;
+  return effort ? ["--effort", effort] : [];
+}
 
 export class ClaudeCliClient extends EventEmitter {
   constructor({ command = "claude", args = [], requestTimeoutMs = 30 * 60_000 } = {}) {
@@ -24,6 +30,19 @@ export class ClaudeCliClient extends EventEmitter {
   async start() {
     this.closed = false;
   }
+
+  /**
+   * The CLI fallback has no in-process tool channel, so a harness that bridges
+   * its own tools cannot use it. Fail loudly rather than running a turn whose
+   * tools silently do not exist.
+   */
+  awaitToolCall() {
+    return Promise.reject(new Error("The Claude CLI fallback cannot host harness tools; the Agent SDK backend is required"));
+  }
+
+  resolveToolCall() { return false; }
+  rejectToolCall() { return false; }
+  rejectAllToolCalls() {}
 
   async listModels() {
     return DEFAULT_MODELS;
@@ -89,8 +108,7 @@ export class ClaudeCliClient extends EventEmitter {
       "--include-partial-messages",
       "--model",
       message.model ?? session.config?.model ?? "sonnet",
-      "--effort",
-      message.effort ?? session.config?.effort ?? "medium",
+      ...effortArgs(message, session),
       "--permission-mode",
       permissionMode(message),
       ...settingSourceArgs,

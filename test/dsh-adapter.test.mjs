@@ -10,36 +10,47 @@ import { ClaudeLinkStore } from "../claude-link-store.js";
 import { handleClaudeSdkRequest } from "../claude-tools.js";
 import { installClaudeSessionEventType } from "../host-plugin.js";
 
-test("the provider streams tool activity and answers into the native DSH conversation", async () => {
+test("a tool call is handed to DSH as a tool-call finish, and the answer resumes the same turn", async () => {
   const runtime = new FakeRuntime();
   const adapter = new ClaudeDshAdapter({ runtime, ready: Promise.resolve() });
   const agent = fakeAgent();
   adapter.attachAgent(agent);
 
-  const chunks = [];
-  for await (const chunk of adapter.stream({
+  const messages = [{ role: "user", source: { kind: "user" }, content: [{ type: "text", text: "list the files" }] }];
+  const request = {
     provider: "claude",
     model: "sonnet",
     reasoningEffort: "high",
     sessionId: agent.id,
-    messages: [
-      { role: "user", source: { kind: "plugin" }, content: [{ type: "text", text: "runtime context" }] },
-      { role: "user", source: { kind: "user" }, content: [{ type: "text", text: "actual question" }] },
-    ],
-  })) chunks.push(chunk);
+    messages,
+    tools: [{ name: "bash", description: "Run a command.", parameters: { type: "object", properties: { command: { type: "string" } } } }],
+  };
 
-  assert.match(runtime.sent[0].message.text, /actual question$/);
-  assert.match(runtime.sent[0].message.text, /<dsh-context>[\s\S]*runtime context/);
-  assert.equal(runtime.sent[0].message.model, "sonnet");
-  assert.deepEqual(runtime.createdConfig.settingSources, []);
-  assert.equal(runtime.createdConfig.systemPrompt, undefined);
-  assert.equal(chunks.find(chunk => chunk.type === "reasoning-delta").text, "Checked the workspace.");
-  assert.equal(chunks.find(chunk => chunk.type === "text-delta").text, "done");
-  assert.equal(chunks.at(-1).replayState.claudeSessionId, "claude-1");
-  assert.equal(agent.appended.filter(event => event.type === CLAUDE_ACTIVITY_EVENT).length, 2);
-  assert.equal(agent.appended.at(-1).data.activity.title, "Bash");
-  assert.match(agent.appended.at(-1).data.activity.input, /pwd/);
-  assert.equal(agent.appended.at(-1).data.activity.output, "ok\n");
+  // Step one: Claude reasons, then asks for a tool. DSH must be told to run it.
+  const first = await collect(adapter.stream(request));
+  const call = first.find(chunk => chunk.type === "block-end" && chunk.block.type === "tool-call");
+  assert.equal(first.find(chunk => chunk.type === "reasoning-delta").text, "Checked the workspace.");
+  assert.equal(call.block.name, "bash", "DSH must see its own tool name");
+  assert.deepEqual(JSON.parse(call.block.arguments), { command: "pwd" });
+  assert.equal(first.at(-1).reason.kind, "tool-calls", "DSH's loop runs the tool, which is what fills its trajectory");
+  assert.equal(runtime.resolved.length, 0, "nothing is resolved until DSH reports a result");
+
+  // Step two: DSH executed it and calls back with the result.
+  const second = await collect(adapter.stream({
+    ...request,
+    messages: [
+      ...messages,
+      { role: "user", content: [{ type: "tool-result", toolCallId: call.block.id, content: [{ type: "text", text: "/workspace/dsh" }] }] },
+    ],
+  }));
+
+  assert.deepEqual(runtime.resolved.map(entry => entry.toolUseId), [call.block.id]);
+  assert.equal(runtime.resolved[0].result.content[0].text, "/workspace/dsh", "the harness result reaches Claude verbatim");
+  assert.equal(runtime.sent.length, 1, "resuming must not start a second Claude turn");
+  assert.equal(second.find(chunk => chunk.type === "text-delta").text, "done");
+  assert.equal(second.at(-1).reason.kind, "stop");
+  assert.equal(second.at(-1).replayState.claudeSessionId, "claude-1");
+  assert.equal(agent.appended.length, 0, "tool activity belongs to DSH's trajectory, not to a custom event");
 });
 
 test("Claude models expose native reasoning effort choices", async () => {
@@ -49,7 +60,7 @@ test("Claude models expose native reasoning effort choices", async () => {
   const model = await adapter.resolveModel("claude", "sonnet");
 
   assert.deepEqual(model.reasoning.efforts.map(effort => effort.id), ["low", "high"]);
-  assert.equal(model.reasoning.defaultEffort, "medium");
+  assert.equal(model.reasoning.defaultEffort, undefined, "an unset effort lets Claude Code apply its own default");
 });
 
 test("automatic title generation uses an isolated ephemeral Claude session", async () => {
@@ -163,50 +174,70 @@ test("Claude SDK permission and question requests use DSH services", async () =>
   assert.deepEqual(runtime.resolved.at(-1).response.answers, { "How detailed?": "Detailed" });
 });
 
-test("Claude forwards generic DSH tools through a provider-neutral executor", async () => {
-  const calls = [];
+test("DSH's tools travel to Claude and their results travel back untouched", async () => {
   const runtime = new FakeRuntime();
-  const agent = fakeAgent({
-    tools: {
-      async execute(input) {
-        calls.push(input);
-        return { isError: false, value: "ok", content: [{ type: "text", text: "probe complete" }] };
-      },
-    },
-  });
   const adapter = new ClaudeDshAdapter({ runtime, ready: Promise.resolve() });
+  const agent = fakeAgent();
   adapter.attachAgent(agent);
-  await collect(adapter.stream({
+
+  const messages = [{ role: "user", source: { kind: "user" }, content: [{ type: "text", text: "use the probe" }] }];
+  const request = {
     provider: "claude",
     model: "sonnet",
     sessionId: agent.id,
-    messages: [{ role: "user", source: { kind: "user" }, content: [{ type: "text", text: "use the probe" }] }],
+    messages,
     tools: [{
       name: "cross_plugin_probe",
       description: "Probe a separately installed DSH plugin.",
       parameters: { type: "object", properties: { value: { type: "string" } }, required: ["value"] },
     }],
+  };
+
+  const first = await collect(adapter.stream(request));
+  assert.deepEqual(runtime.sent[0].message.dshTools.map(tool => tool.name), ["cross_plugin_probe"]);
+  assert.equal(runtime.sent[0].message.executeDshTool, undefined, "the adapter must not execute DSH's tools itself");
+  const call = first.find(chunk => chunk.type === "block-end" && chunk.block.type === "tool-call");
+  assert.equal(call.block.name, "cross_plugin_probe");
+
+  await collect(adapter.stream({
+    ...request,
+    messages: [
+      ...messages,
+      { role: "user", content: [{ type: "tool-result", toolCallId: call.block.id, isError: true, content: [{ type: "text", text: "probe failed" }] }] },
+    ],
   }));
 
-  assert.deepEqual(runtime.sent[0].message.dshTools.map(tool => tool.name), ["cross_plugin_probe"]);
-  const result = await runtime.sent[0].message.executeDshTool({
-    name: "cross_plugin_probe",
-    arguments: { value: "ok" },
-    callId: "claude-probe-1",
-    signal: new AbortController().signal,
-  });
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].agent, agent);
-  assert.deepEqual(calls[0].arguments, { value: "ok" });
-  assert.equal(result.isError, false);
+  assert.equal(runtime.resolved[0].result.isError, true, "a failed harness tool must reach Claude as a failure");
+  assert.equal(runtime.resolved[0].result.content[0].text, "probe failed");
+});
 
-  await assert.rejects(() => runtime.sent[0].message.executeDshTool({
-    name: "not_in_this_turn",
-    arguments: {},
-    callId: "claude-hidden-1",
-    signal: new AbortController().signal,
-  }), /not available for this DSH turn/);
-  assert.equal(calls.length, 1);
+test("DSH's mid-turn context splices never swallow the instruction", async () => {
+  const runtime = new FakeRuntime();
+  const adapter = new ClaudeDshAdapter({ runtime, ready: Promise.resolve() });
+  const agent = fakeAgent();
+  adapter.attachAgent(agent);
+
+  // The real shape from a DSH standard-mode turn: the human's message is first,
+  // then DSH appends workspace instructions, a runtime snapshot, and the skills
+  // catalogue as further "user" messages.
+  for await (const chunk of adapter.stream({
+    provider: "claude",
+    model: "haiku",
+    sessionId: agent.id,
+    messages: [
+      { role: "user", source: { kind: "user" }, content: [{ type: "text", text: "list the files here" }] },
+      { role: "user", source: { kind: "agent-instructions" }, content: [{ type: "text", text: "<system-reminder>workspace instructions</system-reminder>" }] },
+      { role: "user", source: { kind: "plugin", plugin: "@deepseek-ai/dsh-system-prompt" }, content: [{ type: "text", text: "Current runtime context." }] },
+      { role: "user", source: { kind: "skill-catalog" }, content: [{ type: "text", text: "<system-reminder>skills</system-reminder>" }] },
+    ],
+  })) void chunk;
+
+  const sent = runtime.sent[0].message.text;
+  assert.match(sent, /list the files here$/, "the instruction must be the final thing Claude reads");
+  assert.equal(sent.match(/list the files here/g).length, 1, "the instruction must not also appear inside the context block");
+  assert.match(sent, /workspace instructions/, "DSH's spliced context must still reach Claude");
+  assert.match(sent, /Current runtime context/);
+  assert.doesNotMatch(sent, /do not act on them/i, "current-turn context must not be labelled as inert history");
 });
 
 class FakeRuntime extends EventEmitter {
@@ -214,9 +245,8 @@ class FakeRuntime extends EventEmitter {
     super();
     this.models = [{
       id: "sonnet",
-      displayName: "Claude Sonnet",
+      displayName: "Sonnet 5",
       isDefault: true,
-      defaultReasoningEffort: "medium",
       supportedReasoningEfforts: [{ reasoningEffort: "low" }, { reasoningEffort: "high" }],
     }];
     this.sessions = new Map();
@@ -225,6 +255,9 @@ class FakeRuntime extends EventEmitter {
     this.resumed = 0;
     this.createdConfigs = [];
     this.released = [];
+    this.resolved = [];
+    this.interrupted = [];
+    this.parked = null;
   }
 
   async createSession(config) {
@@ -245,26 +278,44 @@ class FakeRuntime extends EventEmitter {
   async sendMessage(sessionId, message) {
     this.sent.push({ sessionId, message });
     const turnId = "turn-1";
-    const answerText = message.text.includes("Generate the session title") ? "项目文件查询" : "done";
+    this.answer = message.text.includes("Generate the session title") ? "项目文件查询" : "done";
     queueMicrotask(() => {
-      this.emit("activity", notification("item/started", sessionId, turnId, {
-        item: { type: "toolUse", id: "tool-1", name: "Bash", input: { command: "pwd" }, status: "inProgress" },
-      }));
-      this.emit("activity", notification("item/completed", sessionId, turnId, {
-        item: { type: "toolUse", id: "tool-1", name: "Bash", status: "completed", output: "ok\n" },
-      }));
       this.emit("activity", notification("item/reasoning/summaryTextDelta", sessionId, turnId, {
         itemId: "reason-1", delta: "Checked the workspace.",
       }));
-      this.emit("activity", notification("item/agentMessage/delta", sessionId, turnId, { itemId: "answer-1", delta: answerText }));
-      this.emit("activity", { method: "turn/completed", params: {
-        sessionId, turn: { id: turnId, status: "completed", error: null, items: [] },
-      } });
+      const tool = message.dshTools?.[0];
+      if (tool) {
+        // Park: Claude asked for a tool and is waiting on the harness to run it.
+        this.parked = { sessionId, turnId };
+        this.emit("activity", notification("tool/parked", sessionId, turnId, {
+          parkId: "park-1", name: tool.name, arguments: { command: "pwd" },
+        }));
+        return;
+      }
+      this.finishTurn(sessionId, turnId);
     });
     return { id: turnId, status: "inProgress", items: [] };
   }
 
-  async interruptTurn() {}
+  resolveToolCall(toolUseId, result) {
+    this.resolved.push({ toolUseId, result });
+    const parked = this.parked;
+    this.parked = null;
+    if (!parked) return false;
+    queueMicrotask(() => this.finishTurn(parked.sessionId, parked.turnId));
+    return true;
+  }
+
+  rejectAllToolCalls() {}
+
+  finishTurn(sessionId, turnId) {
+    this.emit("activity", notification("item/agentMessage/delta", sessionId, turnId, { itemId: "answer-1", delta: this.answer }));
+    this.emit("activity", { method: "turn/completed", params: {
+      sessionId, turn: { id: turnId, status: "completed", error: null, items: [] },
+    } });
+  }
+
+  async interruptTurn(sessionId, turnId) { this.interrupted.push({ sessionId, turnId }); }
 
   async releaseSession(sessionId) {
     this.released.push(sessionId);
@@ -301,32 +352,3 @@ async function collect(stream) {
   for await (const chunk of stream) chunks.push(chunk);
   return chunks;
 }
-
-test("DSH's mid-turn context splices never swallow the instruction", async () => {
-  const runtime = new FakeRuntime();
-  const adapter = new ClaudeDshAdapter({ runtime, ready: Promise.resolve() });
-  const agent = fakeAgent();
-  adapter.attachAgent(agent);
-
-  // The real shape from a DSH standard-mode turn: the human's message is first,
-  // then DSH appends workspace instructions, a runtime snapshot, and the skills
-  // catalogue as further "user" messages.
-  for await (const chunk of adapter.stream({
-    provider: "claude",
-    model: "haiku",
-    sessionId: agent.id,
-    messages: [
-      { role: "user", source: { kind: "user" }, content: [{ type: "text", text: "list the files here" }] },
-      { role: "user", source: { kind: "agent-instructions" }, content: [{ type: "text", text: "<system-reminder>workspace instructions</system-reminder>" }] },
-      { role: "user", source: { kind: "plugin", plugin: "@deepseek-ai/dsh-system-prompt" }, content: [{ type: "text", text: "Current runtime context." }] },
-      { role: "user", source: { kind: "skill-catalog" }, content: [{ type: "text", text: "<system-reminder>skills</system-reminder>" }] },
-    ],
-  })) void chunk;
-
-  const sent = runtime.sent[0].message.text;
-  assert.match(sent, /list the files here$/, "the instruction must be the final thing Claude reads");
-  assert.equal(sent.match(/list the files here/g).length, 1, "the instruction must not also appear inside the context block");
-  assert.match(sent, /workspace instructions/, "DSH's spliced context must still reach Claude");
-  assert.match(sent, /Current runtime context/);
-  assert.doesNotMatch(sent, /do not act on them/i, "current-turn context must not be labelled as inert history");
-});

@@ -7,13 +7,13 @@ import { z } from "zod";
  * new model families appear without a release here.
  */
 const DEFAULT_MODELS = [
-  { id: "opus", displayName: "Opus 5", isDefault: true, defaultReasoningEffort: "high", supportedReasoningEfforts: reasoningEfforts() },
-  { id: "fable", displayName: "Fable 5", isDefault: false, defaultReasoningEffort: "medium", supportedReasoningEfforts: reasoningEfforts() },
-  { id: "sonnet", displayName: "Sonnet 5", isDefault: false, defaultReasoningEffort: "medium", supportedReasoningEfforts: reasoningEfforts() },
-  { id: "haiku", displayName: "Haiku 4.5", isDefault: false, defaultReasoningEffort: "low", supportedReasoningEfforts: reasoningEfforts() },
+  { id: "opus", displayName: "Opus 5", isDefault: true, supportedReasoningEfforts: reasoningEfforts() },
+  { id: "fable", displayName: "Fable 5", isDefault: false, supportedReasoningEfforts: reasoningEfforts() },
+  { id: "sonnet", displayName: "Sonnet 5", isDefault: false, supportedReasoningEfforts: reasoningEfforts() },
+  { id: "haiku", displayName: "Haiku 4.5", isDefault: false, supportedReasoningEfforts: reasoningEfforts() },
 ];
 
-function reasoningEfforts(levels = ["low", "medium", "high"]) {
+function reasoningEfforts(levels = ["low", "medium", "high", "xhigh", "max"]) {
   return levels.map(reasoningEffort => ({ reasoningEffort }));
 }
 
@@ -40,12 +40,9 @@ function toRuntimeModels(rows) {
       id: row.value,
       displayName: modelName(row),
       isDefault: recommended !== undefined && row.resolvedModel === recommended,
-      ...(levels.length
-        ? {
-            defaultReasoningEffort: levels.includes("medium") ? "medium" : levels[0],
-            supportedReasoningEfforts: reasoningEfforts(levels),
-          }
-        : {}),
+      // No default effort is invented: ModelInfo reports none, so leaving it
+      // unset means Claude Code applies its own.
+      ...(levels.length ? { supportedReasoningEfforts: reasoningEfforts(levels) } : {}),
     });
   }
   if (models.length && !models.some(model => model.isDefault)) models[0].isDefault = true;
@@ -85,6 +82,9 @@ export class ClaudeSdkClient extends EventEmitter {
     this.sessions = new Map();
     this.queries = new Map();
     this.pendingRequests = new Map();
+    // Tool calls handed to the harness: the MCP handler parks here until the
+    // harness executes the call and sends the result back.
+    this.pendingToolCalls = new Map();
     this.closed = false;
   }
 
@@ -92,6 +92,49 @@ export class ClaudeSdkClient extends EventEmitter {
     this.sdk ??= await import("@anthropic-ai/claude-agent-sdk");
     if (typeof this.sdk.query !== "function") throw new Error("Claude Agent SDK query() is unavailable");
     this.closed = false;
+  }
+
+  /**
+   * Park one tool call and announce it, so the harness can run it.
+   *
+   * The id is minted here rather than taken from the model's `tool_use` block:
+   * the MCP handler is never told that id, and the harness only needs an id
+   * that survives its own round trip. Announcing from the handler also means
+   * the call is known to exist exactly when the SDK is actually waiting on it.
+   */
+  parkToolCall(sessionId, turnId, name, args) {
+    const parkId = randomUUID();
+    const parked = new Promise((resolve, reject) => {
+      this.pendingToolCalls.set(parkId, { resolve, reject });
+    });
+    this.emit("activity", {
+      method: "tool/parked",
+      params: { sessionId, turnId, parkId, name, arguments: args ?? {} },
+    });
+    return parked;
+  }
+
+  /** Hand one harness-executed result back to the waiting tool call. */
+  resolveToolCall(parkId, result) {
+    const pending = this.pendingToolCalls.get(parkId);
+    if (!pending) return false;
+    this.pendingToolCalls.delete(parkId);
+    pending.resolve(result);
+    return true;
+  }
+
+  /** Fail one parked call — an aborted turn, or a harness-side execution error. */
+  rejectToolCall(toolUseId, error) {
+    const pending = this.pendingToolCalls.get(toolUseId);
+    if (!pending) return false;
+    this.pendingToolCalls.delete(toolUseId);
+    pending.reject(error instanceof Error ? error : new Error(String(error)));
+    return true;
+  }
+
+  /** Fail every parked call, e.g. when a turn is interrupted mid-handoff. */
+  rejectAllToolCalls(error) {
+    for (const parkId of [...this.pendingToolCalls.keys()]) this.rejectToolCall(parkId, error);
   }
 
   async listModels() {
@@ -148,7 +191,7 @@ export class ClaudeSdkClient extends EventEmitter {
     const session = this.sessions.get(sessionId) ?? (await this.resumeSession(sessionId, message));
     const turnId = randomUUID();
     const abortController = new AbortController();
-    const options = this.queryOptions(session, message, abortController);
+    const options = this.queryOptions(session, message, abortController, turnId);
     const query = this.sdk.query({ prompt: message.text, options });
     this.queries.set(turnId, { query, abortController, sessionId });
     void this.consumeQuery(session, turnId, query).catch((error) => {
@@ -205,12 +248,12 @@ export class ClaudeSdkClient extends EventEmitter {
     request.resolve({ behavior: "deny", message: error?.message ?? String(error) });
   }
 
-  queryOptions(session, message, abortController) {
+  queryOptions(session, message, abortController, turnId) {
     return {
       abortController,
       cwd: message.cwd ?? session.cwd ?? process.cwd(),
       model: message.model ?? session.config?.model,
-      effort: message.effort ?? session.config?.effort,
+      ...(effortOf(message, session) !== undefined ? { effort: effortOf(message, session) } : {}),
       permissionMode: sdkPermissionMode(message),
       // DSH owns the toolset. Without this, Claude Code's built-ins stay in
       // context and win — `allowedTools` only pre-approves, it does not scope.
@@ -221,7 +264,7 @@ export class ClaudeSdkClient extends EventEmitter {
       includePartialMessages: true,
       ...(session.created ? { resume: session.id } : { sessionId: session.id }),
       canUseTool: (toolName, input, options) => this.requestPermission(session.id, toolName, input, options),
-      ...dshMcpOptions(this.sdk, message, abortController.signal),
+      ...dshMcpOptions(this.sdk, message, (name, args) => this.parkToolCall(session.id, turnId, name, args)),
     };
   }
 
@@ -286,24 +329,21 @@ export class ClaudeSdkClient extends EventEmitter {
   }
 }
 
-function dshMcpOptions(sdk, message, signal) {
+function dshMcpOptions(sdk, message, park) {
   const schemas = message.dshTools;
-  const execute = message.executeDshTool;
   if (!Array.isArray(schemas) || schemas.length === 0) return {};
-  if (typeof execute !== "function") throw new Error("Claude DSH tools require an execution callback");
   if (typeof sdk.createSdkMcpServer !== "function" || typeof sdk.tool !== "function") {
     throw new Error("This Claude Agent SDK does not support in-process DSH tools");
   }
+  // The handler deliberately does no work. The harness owns execution — its
+  // agent loop runs the tool under its own sandbox and approval policy, and
+  // records it in its own trajectory — so the call parks here until the result
+  // comes back through the adapter.
   const tools = schemas.map(schema => sdk.tool(
     schema.name,
     schema.description,
     jsonSchemaShape(schema.parameters),
-    async (args, extra = {}) => dshToolResult(await execute({
-      name: schema.name,
-      arguments: args,
-      callId: extra.toolUseID ?? extra.toolUseId ?? randomUUID(),
-      signal: extra.signal ?? signal,
-    })),
+    async args => park(schema.name, args),
   ));
   return {
     mcpServers: {
@@ -342,7 +382,7 @@ function jsonSchemaShape(schema) {
   }));
 }
 
-function dshToolResult(result) {
+export function dshToolResult(result) {
   const content = (result.content ?? []).map(block => {
     if (block?.type === "text") return { type: "text", text: String(block.text ?? "") };
     if (block?.type === "image" && typeof block.data === "string" && typeof block.mediaType === "string") {
@@ -459,6 +499,11 @@ function responseForRequest(pending, response) {
 function resultError(message) {
   if (!message?.is_error) return null;
   return new Error(message.errors?.join("\n") || message.subtype || "Claude SDK turn failed");
+}
+
+/** An unset effort must stay unset, so Claude Code applies its own default. */
+function effortOf(message, session) {
+  return message.effort ?? session.config?.effort ?? undefined;
 }
 
 function sdkPermissionMode(message) {
