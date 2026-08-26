@@ -29,7 +29,7 @@ test("the provider streams tool activity and answers into the native DSH convers
   })) chunks.push(chunk);
 
   assert.match(runtime.sent[0].message.text, /actual question$/);
-  assert.match(runtime.sent[0].message.text, /<dsh-session-history>[\s\S]*runtime context/);
+  assert.match(runtime.sent[0].message.text, /<dsh-context>[\s\S]*runtime context/);
   assert.equal(runtime.sent[0].message.model, "sonnet");
   assert.deepEqual(runtime.createdConfig.settingSources, []);
   assert.equal(runtime.createdConfig.systemPrompt, undefined);
@@ -301,3 +301,32 @@ async function collect(stream) {
   for await (const chunk of stream) chunks.push(chunk);
   return chunks;
 }
+
+test("DSH's mid-turn context splices never swallow the instruction", async () => {
+  const runtime = new FakeRuntime();
+  const adapter = new ClaudeDshAdapter({ runtime, ready: Promise.resolve() });
+  const agent = fakeAgent();
+  adapter.attachAgent(agent);
+
+  // The real shape from a DSH standard-mode turn: the human's message is first,
+  // then DSH appends workspace instructions, a runtime snapshot, and the skills
+  // catalogue as further "user" messages.
+  for await (const chunk of adapter.stream({
+    provider: "claude-agent-sdk",
+    model: "haiku",
+    sessionId: agent.id,
+    messages: [
+      { role: "user", source: { kind: "user" }, content: [{ type: "text", text: "list the files here" }] },
+      { role: "user", source: { kind: "agent-instructions" }, content: [{ type: "text", text: "<system-reminder>workspace instructions</system-reminder>" }] },
+      { role: "user", source: { kind: "plugin", plugin: "@deepseek-ai/dsh-system-prompt" }, content: [{ type: "text", text: "Current runtime context." }] },
+      { role: "user", source: { kind: "skill-catalog" }, content: [{ type: "text", text: "<system-reminder>skills</system-reminder>" }] },
+    ],
+  })) void chunk;
+
+  const sent = runtime.sent[0].message.text;
+  assert.match(sent, /list the files here$/, "the instruction must be the final thing Claude reads");
+  assert.equal(sent.match(/list the files here/g).length, 1, "the instruction must not also appear inside the context block");
+  assert.match(sent, /workspace instructions/, "DSH's spliced context must still reach Claude");
+  assert.match(sent, /Current runtime context/);
+  assert.doesNotMatch(sent, /do not act on them/i, "current-turn context must not be labelled as inert history");
+});

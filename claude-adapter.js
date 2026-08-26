@@ -161,8 +161,9 @@ export class ClaudeDshAdapter extends LlmAdapter {
     }
     const sessionId = String(options.sessionId ?? "");
     if (!sessionId) throw new Error("Relay Claude adapter requires a DSH session id");
-    const text = latestUserText(options.messages);
-    if (!text) throw new Error("Relay Claude adapter received no user text");
+    const instruction = latestUserIndex(options.messages);
+    const text = instruction === -1 ? "" : messageText(options.messages[instruction]);
+    if (!text) throw new Error("The Claude adapter received no user text");
     const agent = this.agents.get(sessionId);
     if (!agent) throw new Error(`Relay Claude adapter has no attached agent for ${sessionId}`);
     const nativePermissions = permissionConfiguration(agent.session.events);
@@ -187,7 +188,7 @@ export class ClaudeDshAdapter extends LlmAdapter {
       });
     };
     const claudeSessionId = await this.ensureSession(sessionId);
-    const prompt = this.seedPrompt(sessionId, options.messages, text);
+    const prompt = this.seedPrompt(sessionId, options.messages, instruction, text);
     const queue = new ActivityQueue(options.signal, "Claude");
     const onActivity = (message) => {
       const candidate = message.params?.sessionId ?? message.params?.session?.id;
@@ -314,25 +315,24 @@ export class ClaudeDshAdapter extends LlmAdapter {
    * between, prepend those turns so a mid-session model switch does not drop
    * context.
    */
-  seedPrompt(sessionId, messages, text) {
+  seedPrompt(sessionId, messages, instruction, text) {
     const key = String(sessionId);
     const seen = this.seen.get(key) ?? 0;
-    const missed = messages.slice(seen, Math.max(seen, messages.length - 1));
-    if (!missed.length) return text;
-    const transcript = missed.map(message => {
-      const body = (message?.content ?? [])
-        .filter(block => block.type === "text")
-        .map(block => block.text)
-        .join("\n")
-        .trim();
-      return body ? `${message.role ?? "user"}: ${body}` : "";
-    }).filter(Boolean).join("\n\n");
-    if (!transcript) return text;
+    const context = messages
+      .map((message, index) => ({ message, index }))
+      .filter(entry => entry.index >= seen && entry.index !== instruction)
+      .map(entry => {
+        const body = messageText(entry.message);
+        return body ? `${entry.message.role ?? "user"}: ${body}` : "";
+      })
+      .filter(Boolean)
+      .join("\n\n");
+    if (!context) return text;
     return [
-      "<dsh-session-history>",
-      "Earlier turns of this DSH session, answered before you joined it or while another model was selected. Context only — do not act on them again.",
-      transcript,
-      "</dsh-session-history>",
+      "<dsh-context>",
+      "Context from the DeepSeek Harness session: workspace instructions, runtime snapshots, and any turns answered by another model. Background only — the request to act on follows this block.",
+      context,
+      "</dsh-context>",
       "",
       text,
     ].join("\n");
@@ -538,21 +538,29 @@ function reasoningEffortName(value) {
   return String(value) === "xhigh" ? "Extra high" : humanize(value);
 }
 
-function latestUserText(messages) {
-  let fallback = "";
+/**
+ * DSH splices its own context messages (workspace instructions, runtime
+ * snapshots, the skill catalog) *after* the human's message inside the same
+ * turn, so the instruction is not the last entry. Find the human's message and
+ * let everything else travel as context.
+ */
+function latestUserIndex(messages) {
+  let fallback = -1;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
-    if (message?.role !== "user") continue;
-    const text = (message.content ?? [])
-      .filter(block => block.type === "text")
-      .map(block => block.text)
-      .join("\n")
-      .trim();
-    if (!text) continue;
-    if (message.source?.kind === "user") return text;
-    fallback ||= text;
+    if (message?.role !== "user" || !messageText(message)) continue;
+    if (message.source?.kind === "user") return index;
+    if (fallback === -1) fallback = index;
   }
   return fallback;
+}
+
+function messageText(message) {
+  return (message?.content ?? [])
+    .filter(block => block.type === "text")
+    .map(block => block.text)
+    .join("\n")
+    .trim();
 }
 
 function auxiliaryInput(messages) {

@@ -70,8 +70,8 @@ export class ClaudeSessionRuntime extends EventEmitter {
     approvalPolicy = "on-request",
     cwd = this.cwd,
     ephemeral = false,
-    settingSources = ["user", "project", "local"],
-    systemPrompt = { type: "preset", preset: "claude_code" },
+    settingSources = [],
+    systemPrompt = undefined,
   } = {}) {
     const selectedModel = model ?? this.models.find(candidate => candidate.isDefault)?.id ?? "sonnet";
     const selectedEffort = effort
@@ -114,7 +114,13 @@ export class ClaudeSessionRuntime extends EventEmitter {
     return publicSession(session);
   }
 
-  async sendMessage(sessionId, { text, model, effort, sandbox, approvalPolicy, cwd } = {}) {
+  async sendMessage(sessionId, {
+    text, model, effort, sandbox, approvalPolicy, cwd,
+    // Per-turn, owned by the caller rather than by session state: the harness's
+    // assembled prompt and its tool bridge. These must reach the client
+    // untouched — dropping them leaves the model with no tools at all.
+    systemPrompt, settingSources, dshTools, executeDshTool, permissionMode,
+  } = {}) {
     const session = this.requireSession(sessionId);
     if (!text?.trim()) throw new Error("message text is required");
     const next = {
@@ -125,7 +131,15 @@ export class ClaudeSessionRuntime extends EventEmitter {
       cwd: cwd ?? session.cwd,
     };
     Object.assign(session, next, { updatedAt: nowSeconds() });
-    const turn = await this.client.sendMessage(sessionId, { text, ...next });
+    const turn = await this.client.sendMessage(sessionId, {
+      text,
+      ...next,
+      ...(systemPrompt !== undefined ? { systemPrompt } : {}),
+      ...(settingSources !== undefined ? { settingSources } : {}),
+      ...(permissionMode !== undefined ? { permissionMode } : {}),
+      ...(dshTools !== undefined ? { dshTools } : {}),
+      ...(executeDshTool !== undefined ? { executeDshTool } : {}),
+    });
     this.ensureTurn(session, turn);
     this.emitChange();
     return structuredClone(turn);

@@ -122,3 +122,31 @@ class FakeClaudeClient extends EventEmitter {
 }
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+
+test("the runtime forwards the harness prompt and tool bridge to the client", async () => {
+  const sent = [];
+  const client = new (await import("node:events")).EventEmitter();
+  Object.assign(client, {
+    async start() {},
+    async listModels() { return [{ id: "sonnet", isDefault: true }]; },
+    async createSession(config) { return { id: "c1", cwd: config.cwd ?? "/w", turns: [] }; },
+    async sendMessage(sessionId, message) { sent.push(message); return { id: "t1", status: "inProgress", items: [] }; },
+  });
+
+  const runtime = new ClaudeSessionRuntime({ client, cwd: "/w" });
+  await runtime.initialize();
+  const session = await runtime.createSession({ model: "sonnet" });
+  const executeDshTool = async () => ({ content: [] });
+  await runtime.sendMessage(session.id, {
+    text: "go",
+    systemPrompt: "DSH's own assembled prompt",
+    settingSources: [],
+    dshTools: [{ name: "bash", description: "run", parameters: { type: "object", properties: {} } }],
+    executeDshTool,
+  });
+
+  assert.equal(sent[0].systemPrompt, "DSH's own assembled prompt", "the harness prompt must survive the runtime");
+  assert.deepEqual(sent[0].settingSources, []);
+  assert.deepEqual(sent[0].dshTools.map(tool => tool.name), ["bash"], "dropping the bridge leaves the model with no tools");
+  assert.equal(sent[0].executeDshTool, executeDshTool);
+});
