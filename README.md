@@ -114,9 +114,12 @@ Two things that remain your responsibility:
   entirely. Don't tunnel DSH.
 - **Use an API key for unattended workloads.** Subscription limits assume
   "ordinary, individual usage"; batch or scheduled runs belong on a key.
-- **Leave DSH's telemetry off.** The plugin enforces this: if it detects an
-  enabled exporter it refuses the turn with an inline error rather than sending
-  anything to Claude. `@deepseek-ai/dsh-base` mounts an OTLP exporter
+- **Turn DSH's telemetry off at the source.** Set `DSH_TELEMETRY_DISABLED=1` in
+  the shell that launches DSH: the launchers then patch the exporter row off
+  entirely, and no configuration can switch it back on. Prefer that to relying
+  on this plugin's guard, which refuses the turn if it *detects* an enabled
+  exporter but reads config layers with a shallow scan and cannot resolve `!!js`
+  expressions. The guard is a backstop, not the control. `@deepseek-ai/dsh-base` mounts an OTLP exporter
   pointed at `harness-telemetry.deepseeksvc.com`. It defaults to `DISABLED` and
   stays off unless you set `DSH_TELEMETRY_MODE`, but DSH's own note says
   uploading mirrors session-log records "with no session-telemetry/record

@@ -329,3 +329,17 @@ test("DSH tools are pre-approved regardless of policy, because DSH gates them", 
 
   assert.deepEqual(captured.allowedTools, ["mcp__dsh__bash"]);
 });
+
+test("a caller that forgets settingSources still loads none of the user's Claude config", async () => {
+  let captured = null;
+  const sdk = {
+    query(params) { captured = params.options; return Object.assign((async function* () {})(), { close() {}, interrupt: async () => {} }); },
+  };
+  const client = new ClaudeSdkClient({ sdk });
+  const session = await client.createSession({ sessionId: "s-default" });
+
+  // No settingSources anywhere: not on the message, not on the session config.
+  await client.sendMessage(session.id, { text: "hi" });
+
+  assert.deepEqual(captured.settingSources, [], "the default must not mount ~/.claude on top of the harness prompt");
+});

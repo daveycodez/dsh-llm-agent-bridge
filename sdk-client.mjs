@@ -259,7 +259,10 @@ export class ClaudeSdkClient extends EventEmitter {
       // DSH owns the toolset. Without this, Claude Code's built-ins stay in
       // context and win — `allowedTools` only pre-approves, it does not scope.
       tools: [],
-      settingSources: message.settingSources ?? session.config?.settingSources ?? ["user", "project", "local"],
+      // Default to loading nothing. Every layer above passes [] explicitly, but
+      // a caller that forgets must not silently mount the user's own Claude
+      // Code config — CLAUDE.md, skills, hooks — on top of the harness prompt.
+      settingSources: message.settingSources ?? session.config?.settingSources ?? [],
       systemPrompt: message.systemPrompt ?? session.config?.systemPrompt,
       pathToClaudeCodeExecutable: this.pathToClaudeCodeExecutable,
       includePartialMessages: true,
