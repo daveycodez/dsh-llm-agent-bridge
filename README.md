@@ -75,7 +75,8 @@ DSH's own note on the row says uploads carry session-log records "with no
 session-telemetry/record redaction rule, so exports are the raw captured copy" —
 and with this plugin installed, that copy contains Claude's output.
 
-**On activation the plugin turns a live exporter off** and says so in the log:
+**The plugin turns a live exporter off at load — before any Claude turn is
+possible** — and says so in the log:
 it drains the pipeline through the backend's own `shutdown()`, then unmounts the
 row so capture stops as well. Reading the mounted backend is exact — it sees the
 exporter whatever switched it on, which a scan of environment and config layers
@@ -88,10 +89,12 @@ than reporting a success it cannot verify. The test suite mounts the real
 asserts both that the row is gone from the host and that nothing reached the
 collector.
 
-Two things this cannot do: it does not un-send records already queued before it
-ran, and it only reaches the exporter DSH ships. Setting
-`DSH_TELEMETRY_DISABLED=1` in the launching shell prevents the exporter from
-ever being constructed, which is strictly better if you control the environment.
+What this does not cover: an exporter some other plugin adds. It runs before the
+adapter is registered, so nothing Claude produced can have been captured or
+queued beforehand — but it reaches the row DSH ships, not an arbitrary one.
+Setting `DSH_TELEMETRY_DISABLED=1` in the launching shell prevents the exporter
+from ever being constructed, which is strictly better if you control the
+environment.
 
 Configure the behaviour on the plugin row if the default does not suit:
 
@@ -141,8 +144,22 @@ requires: it never collects, stores, or intermediates your credentials.
 Verify it yourself:
 
 ```bash
-grep -rnE "credentials\.json|find-generic-password|CLAUDE_CODE_OAUTH_TOKEN|Authorization|api\.anthropic\.com" *.js *.mjs src internal
+grep -rnE "credentials\.json|find-generic-password|CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY|Authorization|api\.anthropic\.com" *.js *.mjs internal
 ```
+
+### What this does not claim
+
+Running this locally, on your own subscription, signed in through Anthropic's own
+flow, matches the carve-out on that page for "an end user signing in to the
+unmodified Claude Code binary with their own Claude subscription". Publishing a
+plugin whose function is to route Agent SDK traffic through subscription OAuth
+is addressed by a different sentence in the same section — developers "should use
+API key authentication through Claude Console". Both are true at once, and the
+second is advisory rather than prohibitive. Only Anthropic can rule on it; this
+README describes what the code does, not what they permit.
+
+An API key resolves the question outright: export `ANTHROPIC_API_KEY` in the
+shell that launches DSH and the binary uses it, with no change to this plugin.
 
 Two things that remain your responsibility:
 
