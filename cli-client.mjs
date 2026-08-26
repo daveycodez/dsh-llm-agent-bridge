@@ -100,7 +100,10 @@ export class ClaudeCliClient extends EventEmitter {
     const child = spawn(this.command, cliArgs, {
       cwd: message.cwd ?? session.cwd ?? process.cwd(),
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, ...(message.env ?? {}) },
+      // The child inherits this process's environment and nothing else. A
+      // per-turn env override would be a path for injecting ANTHROPIC_BASE_URL
+      // or an API key into the binary that holds the subscription login.
+      env: process.env,
     });
     child.relayClaudeSessionId = session.id;
     session.created = true;

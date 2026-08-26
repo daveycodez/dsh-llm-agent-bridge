@@ -67,6 +67,9 @@ requires: it never collects, stores, or intermediates your credentials.
   `CLAUDE_CODE_OAUTH_TOKEN`, or any API-key environment variable.
 - No source file constructs an `Authorization` header or calls
   `api.anthropic.com` directly.
+- The CLI fallback spawns `claude` with this process's environment and nothing
+  else: there is no per-turn env override, so no caller can inject
+  `ANTHROPIC_BASE_URL` or an API key into the binary that holds your login.
 
 Verify it yourself:
 
@@ -77,7 +80,11 @@ grep -rnE "credentials\.json|find-generic-password|CLAUDE_CODE_OAUTH_TOKEN|Autho
 Two things that remain your responsibility:
 
 - **Keep DSH bound to localhost.** A DSH instance other people can reach means
-  your subscription is serving their requests, which the terms prohibit.
+  your subscription is serving their requests, which the terms prohibit. DSH
+  refuses `--host 0.0.0.0` outright ("it would expose remote code execution to
+  the network"), but that guard matches the literal string only — a LAN address
+  or `::` still binds, and a tunnel pointed at the web port bypasses it
+  entirely. Don't tunnel DSH.
 - **Use an API key for unattended workloads.** Subscription limits assume
   "ordinary, individual usage"; batch or scheduled runs belong on a key.
 
