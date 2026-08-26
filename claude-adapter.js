@@ -264,7 +264,7 @@ export class ClaudeDshAdapter extends LlmAdapter {
       approvalPolicy: "never",
       cwd,
       ephemeral: true,
-      settingSources: ["user"],
+      settingSources: [],
       systemPrompt: options.system,
     });
     const claudeSessionId = created.id;

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import type { UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
 
-const ID = 'dsh-llm-claude-agent-sdk'
+const ID = 'dsh-llm-agent-bridge'
 const ROOT = dirname(fileURLToPath(import.meta.url))
 const CSS_MODULE = '\0dsh-css-module:'
 const GLOBAL_CSS = '\0dsh-global-css:'

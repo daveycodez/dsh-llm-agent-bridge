@@ -1,8 +1,8 @@
-# `dsh-llm-claude-agent-sdk`
+# `dsh-llm-agent-bridge`
 
-Adds **Claude** to [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
-as a selectable LLM provider, served through Anthropic's official
-[Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk).
+Brings vendor agent SDKs into [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
+as selectable LLM providers. Today that is **Claude**, served through Anthropic's
+official [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk).
 
 Pick it from the model dropdown in **any** DSH mode — Standard, PTC, Creator,
 Minimal, or your own preset. DSH keeps its prompt, its tools, its approvals and
@@ -38,7 +38,7 @@ result, decides again, and returns one answer. DSH's own loop sits out.
 ## Install
 
 ```bash
-npx @deepseek-ai/dsh plugin --profile web add dsh-llm-claude-agent-sdk
+npx @deepseek-ai/dsh plugin --profile web add dsh-llm-agent-bridge
 npx @deepseek-ai/dsh web
 ```
 

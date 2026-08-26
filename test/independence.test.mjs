@@ -11,7 +11,7 @@ const execFileAsync = promisify(execFile);
 
 test("plugin remains independently installable", async () => {
   const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
-  assert.equal(manifest.name, "dsh-llm-claude-agent-sdk");
+  assert.equal(manifest.name, "dsh-llm-agent-bridge");
   for (const field of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
     const relayDependencies = Object.keys(manifest[field] ?? {}).filter(isRelayPackage);
     assert.deepEqual(relayDependencies, [], `${field} must not depend on another Relay package`);

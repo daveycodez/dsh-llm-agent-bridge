@@ -83,7 +83,7 @@ test("automatic title generation uses an isolated ephemeral Claude session", asy
   assert.equal(adapter.sessionFor(agent.id), "claude-1");
   assert.equal(auxiliaryConfig.sandbox, "read-only");
   assert.equal(auxiliaryConfig.approvalPolicy, "never");
-  assert.deepEqual(auxiliaryConfig.settingSources, ["user"]);
+  assert.deepEqual(auxiliaryConfig.settingSources, [], "auxiliary calls must not load ~/.claude settings either");
   assert.deepEqual(runtime.released, ["claude-2"]);
   assert.equal(mainChunks.find(chunk => chunk.type === "text-delta").text, "done");
   assert.equal(titleChunks.find(chunk => chunk.type === "text-delta").text, "项目文件查询");

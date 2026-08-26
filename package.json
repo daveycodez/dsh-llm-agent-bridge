@@ -1,7 +1,7 @@
 {
-  "name": "dsh-llm-claude-agent-sdk",
+  "name": "dsh-llm-agent-bridge",
   "version": "0.1.0",
-  "description": "Adds Claude models to DeepSeek Harness as a selectable LLM provider, served through Anthropic's official Claude Agent SDK. Works in any DSH mode; DSH keeps its own prompt and tools.",
+  "description": "Bridges vendor agent SDKs into DeepSeek Harness as selectable LLM providers. Works in any DSH mode; DSH keeps its own prompt, tools, sandbox and approvals.",
   "license": "MIT",
   "type": "module",
   "main": "lib/host-plugin.js",
