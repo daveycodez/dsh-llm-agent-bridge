@@ -1,3 +1,3 @@
 - insert:
-    - id: relay-claude-host
-      name: 'relay-dsh-plugin-claude'
+    - id: claude-agent-sdk-llm
+      name: 'dsh-llm-claude-agent-sdk'

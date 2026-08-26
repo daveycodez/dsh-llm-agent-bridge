@@ -9,9 +9,9 @@ import test from "node:test";
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const execFileAsync = promisify(execFile);
 
-test("Claude plugin remains independently installable", async () => {
+test("plugin remains independently installable", async () => {
   const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
-  assert.equal(manifest.name, "relay-dsh-plugin-claude");
+  assert.equal(manifest.name, "dsh-llm-claude-agent-sdk");
   for (const field of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
     const relayDependencies = Object.keys(manifest[field] ?? {}).filter(isRelayPackage);
     assert.deepEqual(relayDependencies, [], `${field} must not depend on another Relay package`);
@@ -24,8 +24,10 @@ test("Claude plugin remains independently installable", async () => {
   }
 });
 
-test("tracked build artifacts contain no checkout-specific path", async () => {
-  for (const entry of await readdir(join(root, "lib"), { withFileTypes: true })) {
+test("build artifacts contain no checkout-specific path", async () => {
+  const entries = await readdir(join(root, "lib"), { withFileTypes: true }).catch(() => null);
+  if (entries === null) return; // not built yet
+  for (const entry of entries) {
     if (!entry.isFile() || (!entry.name.endsWith(".js") && !entry.name.endsWith(".map"))) continue;
     assert.doesNotMatch(await readFile(join(root, "lib", entry.name), "utf8"), new RegExp(escapeRegExp(root)));
   }

@@ -1,32 +1,63 @@
 {
-  "name": "relay-dsh-plugin-claude",
-  "version": "0.1.1-rc.2",
-  "description": "Claude Code integration plugin for DeepSeek Harness, providing native Claude conversations powered by the Claude Agent SDK, with model selection, approvals, questions, tools, and session continuation.",
+  "name": "dsh-llm-claude-agent-sdk",
+  "version": "0.1.0",
+  "description": "Adds Claude models to DeepSeek Harness as a selectable LLM provider, served through Anthropic's official Claude Agent SDK. Works in any DSH mode; DSH keeps its own prompt and tools.",
   "license": "MIT",
   "type": "module",
   "main": "lib/host-plugin.js",
-  "repository": { "type": "git", "url": "git+https://github.com/yangbobo2021/relay-dsh-plugin-claude.git" },
-  "homepage": "https://github.com/yangbobo2021/relay-dsh-plugin-claude#readme",
-  "bugs": { "url": "https://github.com/yangbobo2021/relay-dsh-plugin-claude/issues" },
-  "engines": { "node": ">=22.13" },
-  "publishConfig": { "access": "public" },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "prepare:dsh": "bash scripts/link-dsh-development-peers.sh",
-    "prebuild": "npm run prepare:dsh && node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\"",
+    "prebuild": "node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\"",
     "build": "tsdown --config tsdown.config.ts",
     "postbuild": "node normalize-build.mjs",
-    "pretypecheck": "npm run prepare:dsh",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "npm run prepare:dsh && node --test test/*.test.mjs",
+    "test": "node --test test/*.test.mjs",
     "verify": "npm run typecheck && npm test && npm run build"
   },
-  "exports": { ".": "./lib/host-plugin.js", "./client": "./lib/client.js", "./typert": "./lib/typert.host.js", "./package.json": "./package.json" },
-  "files": ["README.zh.md", "docs/images", "cordis.patch.yml", "presets", "lib/client.js", "lib/client.js.map", "lib/host-plugin.js", "lib/host-plugin.js.map", "lib/typert.host.js", "lib/typert.host.js.map"],
-  "dsh": {
-    "client": { "inject": ["@deepseek-ai/dsh-api-remotes", "@deepseek-ai/dsh-client-connection", "@deepseek-ai/dsh-client-locale", "@deepseek-ai/dsh-client-runtime", "@deepseek-ai/dsh-client-ui-conversation", "@deepseek-ai/dsh-client-ui-primitives", "@deepseek-ai/dsh-client-ui-settings", "@deepseek-ai/dsh-client-ui-slots", "@deepseek-ai/dsh-client-ui-theme"], "platform": "web" },
-    "bundle": { "patch": "./cordis.patch.yml" }
+  "exports": {
+    ".": "./lib/host-plugin.js",
+    "./client": "./lib/client.js",
+    "./typert": "./lib/typert.host.js",
+    "./package.json": "./package.json"
   },
-  "dependencies": { "@anthropic-ai/claude-agent-sdk": "^0.3.233", "zod": "4.4.3" },
+  "files": [
+    "lib/client.js",
+    "lib/client.js.map",
+    "lib/host-plugin.js",
+    "lib/host-plugin.js.map",
+    "lib/typert.host.js",
+    "lib/typert.host.js.map",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-theme"
+      ],
+      "platform": "web"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.233",
+    "zod": "4.4.3"
+  },
   "peerDependencies": {
     "@deepseek-ai/dsh-llm": ">=0.1.0-rc.5 <0.1.1 || >=0.1.1-rc.0 <0.2.0",
     "@deepseek-ai/dsh-session": ">=0.1.0-rc.5 <0.1.1 || >=0.1.1-rc.0 <0.2.0",
@@ -34,10 +65,38 @@
     "react": "^18.2.0"
   },
   "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-llm": { "optional": true },
-    "@deepseek-ai/dsh-session": { "optional": true },
-    "@deepseek-ai/dsh-typert-protocol": { "optional": true },
-    "react": { "optional": true }
+    "@deepseek-ai/dsh-llm": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-session": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-typert-protocol": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
   },
-  "devDependencies": { "@types/react": "~18.3.1", "lightningcss": "1.32.0", "react": "^18.2.0", "tsdown": "0.22.2", "typescript": "6.0.3" }
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-api-remotes": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-connection": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-locale": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-runtime": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-settings": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-theme": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-llm": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-session": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-typert-protocol": "0.1.1-rc.2",
+    "@types/react": "~18.3.1",
+    "lightningcss": "1.32.0",
+    "react": "^18.2.0",
+    "tsdown": "0.22.2",
+    "typescript": "6.0.3",
+    "unrun": "^0.3.1"
+  }
 }

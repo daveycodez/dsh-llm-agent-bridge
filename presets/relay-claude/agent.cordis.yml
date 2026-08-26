@@ -1,4 +1,0 @@
-# Claude Code owns the model context, tools, settings, skills, MCP, and command
-# execution. Relay's host adapter binds this otherwise-empty DSH presentation
-# Session to a Claude Code session.
-[]

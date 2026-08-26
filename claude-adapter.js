@@ -1,8 +1,7 @@
 import { LlmAdapter } from "@deepseek-ai/dsh-llm";
 
-export const CLAUDE_PRESET = "relay-claude";
-export const CLAUDE_PROVIDER = "relay-claude";
-export const CLAUDE_ACTIVITY_EVENT = "relay-claude/activity";
+export const CLAUDE_PROVIDER = "claude-agent-sdk";
+export const CLAUDE_ACTIVITY_EVENT = "claude-agent-sdk/activity";
 
 export class ClaudeDshAdapter extends LlmAdapter {
   constructor({ runtime, ready, linkStore = null, logger = console }) {
@@ -15,15 +14,17 @@ export class ClaudeDshAdapter extends LlmAdapter {
     this.settings = new Map();
     this.pendingSessions = new Map();
     this.agents = new Map();
+    this.seen = new Map();
     for (const [sessionId, record] of linkStore?.entries() ?? []) {
       const claudeSessionId = record.claudeSessionId ?? record.sessionId ?? record.threadId;
       if (claudeSessionId) this.links.set(sessionId, claudeSessionId);
       this.settings.set(sessionId, record.config);
+      if (Number.isSafeInteger(record.seen)) this.seen.set(sessionId, record.seen);
     }
   }
 
   providerInfo() {
-    return { id: CLAUDE_PROVIDER, name: "Claude Code" };
+    return { id: CLAUDE_PROVIDER, name: "Claude (Agent SDK)" };
   }
 
   async listModels() {
@@ -61,15 +62,10 @@ export class ClaudeDshAdapter extends LlmAdapter {
     };
   }
 
-  attachAgent(agent, requestedPreset = effectivePreset(agent.session)) {
+  attachAgent(agent) {
     this.agents.set(String(agent.id), agent);
-    if (requestedPreset !== CLAUDE_PRESET) return false;
     this.configuration(agent.id, agent.session.header.cwd);
     return true;
-  }
-
-  servesAgent(agent) {
-    return effectivePreset(agent.session) === CLAUDE_PRESET;
   }
 
   detachAgent(sessionId) {
@@ -88,8 +84,10 @@ export class ClaudeDshAdapter extends LlmAdapter {
       sandbox: "workspace-write",
       approvalPolicy: "on-request",
       cwd: cwd ?? process.cwd(),
-      settingSources: ["user", "project", "local"],
-      systemPrompt: { type: "preset", preset: "claude_code" },
+      // DSH's preset owns the prompt and the tool set; do not load ~/.claude
+      // settings, CLAUDE.md, or the claude_code system prompt on top of it.
+      settingSources: [],
+      systemPrompt: undefined,
     };
     this.settings.set(key, config);
     return config;
@@ -142,6 +140,7 @@ export class ClaudeDshAdapter extends LlmAdapter {
     this.linkStore?.set(sessionId, {
       claudeSessionId: this.links.get(sessionId) ?? null,
       config: this.configuration(sessionId),
+      seen: this.seen.get(String(sessionId)) ?? 0,
     });
   }
 
@@ -169,8 +168,9 @@ export class ClaudeDshAdapter extends LlmAdapter {
     if (!agent) throw new Error(`Relay Claude adapter has no attached agent for ${sessionId}`);
     const nativePermissions = permissionConfiguration(agent.session.events);
     const config = this.configure(sessionId, {
-      ...(options.provider === CLAUDE_PROVIDER ? { model: options.model } : {}),
-      ...(options.provider === CLAUDE_PROVIDER ? { effort: options.reasoningEffort } : {}),
+      model: options.model,
+      effort: options.reasoningEffort,
+      systemPrompt: options.system,
       ...nativePermissions,
       cwd: agent.session.header.cwd,
     });
@@ -188,6 +188,7 @@ export class ClaudeDshAdapter extends LlmAdapter {
       });
     };
     const claudeSessionId = await this.ensureSession(sessionId);
+    const prompt = this.seedPrompt(sessionId, options.messages, text);
     const queue = new ActivityQueue(options.signal, "Claude");
     const onActivity = (message) => {
       const candidate = message.params?.sessionId ?? message.params?.session?.id;
@@ -197,7 +198,7 @@ export class ClaudeDshAdapter extends LlmAdapter {
 
     let turnId = null;
     try {
-      const started = await this.runtime.sendMessage(claudeSessionId, { text, ...config, dshTools, executeDshTool });
+      const started = await this.runtime.sendMessage(claudeSessionId, { text: prompt, ...config, dshTools, executeDshTool });
       turnId = started.id;
       const state = createStreamState();
       let completedTurn = null;
@@ -226,6 +227,8 @@ export class ClaudeDshAdapter extends LlmAdapter {
           reason: { kind: "error", failure: { message: completedTurn.error?.message ?? "Claude turn failed", code: "CLAUDE_TURN_FAILED" } },
         };
       } else {
+        this.seen.set(sessionId, options.messages.length);
+        this.persistLink(sessionId);
         yield { type: "finish", reason: { kind: "stop" }, replayState: { claudeSessionId, turnId } };
       }
     } catch (error) {
@@ -304,6 +307,36 @@ export class ClaudeDshAdapter extends LlmAdapter {
       queue.close();
       await this.runtime.releaseSession(claudeSessionId);
     }
+  }
+
+  /**
+   * DSH owns the conversation; the Claude session only knows the turns it
+   * answered. When the session is new, or when other models answered turns in
+   * between, prepend those turns so a mid-session model switch does not drop
+   * context.
+   */
+  seedPrompt(sessionId, messages, text) {
+    const key = String(sessionId);
+    const seen = this.seen.get(key) ?? 0;
+    const missed = messages.slice(seen, Math.max(seen, messages.length - 1));
+    if (!missed.length) return text;
+    const transcript = missed.map(message => {
+      const body = (message?.content ?? [])
+        .filter(block => block.type === "text")
+        .map(block => block.text)
+        .join("\n")
+        .trim();
+      return body ? `${message.role ?? "user"}: ${body}` : "";
+    }).filter(Boolean).join("\n\n");
+    if (!transcript) return text;
+    return [
+      "<dsh-session-history>",
+      "Earlier turns of this DSH session, answered before you joined it or while another model was selected. Context only — do not act on them again.",
+      transcript,
+      "</dsh-session-history>",
+      "",
+      text,
+    ].join("\n");
   }
 
   projectActivity(agent, claudeSessionId, turnId, message, state) {
@@ -507,6 +540,7 @@ function reasoningEffortName(value) {
 }
 
 function latestUserText(messages) {
+  let fallback = "";
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message?.role !== "user") continue;
@@ -516,9 +550,10 @@ function latestUserText(messages) {
       .join("\n")
       .trim();
     if (!text) continue;
-    if (message.source?.kind === "user" || isRelayActivation(message.source)) return text;
+    if (message.source?.kind === "user") return text;
+    fallback ||= text;
   }
-  return "";
+  return fallback;
 }
 
 function auxiliaryInput(messages) {
@@ -550,10 +585,6 @@ function completeAuxiliaryItem(state, item) {
   return [];
 }
 
-function isRelayActivation(source) {
-  return source?.kind === "plugin" && source.plugin === "relay";
-}
-
 function compact(value) {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined && item !== null));
 }
@@ -581,10 +612,3 @@ function subscribeRuntimeActivity(runtime, listener) {
   return () => runtime.off("activity", listener);
 }
 
-function effectivePreset(session) {
-  for (let index = session.events.length - 1; index >= 0; index -= 1) {
-    const event = session.events[index];
-    if (event.type === "agent-preset/selected") return event.data.agentPreset;
-  }
-  return session.header.agentPreset;
-}

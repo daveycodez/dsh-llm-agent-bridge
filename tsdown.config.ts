@@ -4,10 +4,10 @@ import { fileURLToPath } from 'node:url'
 import type { UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
 
-const ID = 'relay-dsh-plugin-claude'
+const ID = 'dsh-llm-claude-agent-sdk'
 const ROOT = dirname(fileURLToPath(import.meta.url))
-const CSS_MODULE = '\0relay-css-module:'
-const GLOBAL_CSS = '\0relay-global-css:'
+const CSS_MODULE = '\0dsh-css-module:'
+const GLOBAL_CSS = '\0dsh-global-css:'
 const VIRTUAL_SUFFIX = '.mjs'
 const EXTERNALS = new Set([
   'react',
@@ -83,7 +83,7 @@ const clientConfig: UserConfig = {
     'import.meta.env': JSON.stringify({ MODE: process.env.NODE_ENV ?? 'production' }),
   },
   plugins: [{
-    name: 'relay-dsh-css-modules',
+    name: 'dsh-css-modules',
     resolveId(source: string, importer: string | undefined) {
       if (!source.endsWith('.module.css')) return null
       return CSS_MODULE + (importer === undefined ? source : resolve(dirname(importer), source)) + VIRTUAL_SUFFIX
@@ -106,7 +106,7 @@ const clientConfig: UserConfig = {
       return injectionModule(file, output.code.toString(), classMap)
     },
   }, {
-    name: 'relay-dsh-global-css',
+    name: 'dsh-global-css',
     async resolveId(source: string, importer: string | undefined) {
       if (!source.endsWith('.css') || source.endsWith('.module.css')) return null
       const resolved = await this.resolve(source, importer, { skipSelf: true })

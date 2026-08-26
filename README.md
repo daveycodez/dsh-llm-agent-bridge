@@ -1,248 +1,91 @@
-# Claude Code Conversations for DeepSeek Harness
+# `dsh-llm-claude-agent-sdk`
 
-[![npm version](https://img.shields.io/npm/v/relay-dsh-plugin-claude?label=npm)](https://www.npmjs.com/package/relay-dsh-plugin-claude)
-[![CI](https://github.com/yangbobo2021/relay-dsh-plugin-claude/actions/workflows/ci.yml/badge.svg)](https://github.com/yangbobo2021/relay-dsh-plugin-claude/actions/workflows/ci.yml)
-[![npm downloads](https://img.shields.io/npm/dm/relay-dsh-plugin-claude?label=downloads)](https://www.npmjs.com/package/relay-dsh-plugin-claude)
-[![GitHub stars](https://img.shields.io/github/stars/yangbobo2021/relay-dsh-plugin-claude?style=flat)](https://github.com/yangbobo2021/relay-dsh-plugin-claude/stargazers)
-[![MIT license](https://img.shields.io/github/license/yangbobo2021/relay-dsh-plugin-claude)](LICENSE)
-[![DSH compatibility](https://img.shields.io/badge/DSH-0.1.1--rc.2-2f7d68)](https://github.com/deepseek-ai/deepseek-harness)
-[![npm provenance](https://img.shields.io/badge/npm_provenance-verified-2f9e44)](https://www.npmjs.com/package/relay-dsh-plugin-claude/v/0.1.1-rc.2)
+Adds **Claude** to [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
+as a selectable LLM provider, served through Anthropic's official
+[Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk).
 
-English | [中文](README.zh.md)
+Pick it from the model dropdown in **any** DSH mode — Standard, PTC, Creator,
+Minimal, or your own preset. DSH keeps its prompt, its tools, its approvals and
+its conversation history; Claude does the thinking.
 
-**npm package:** [`relay-dsh-plugin-claude`](https://www.npmjs.com/package/relay-dsh-plugin-claude)
-· [All Relay DSH plugins](https://github.com/yangbobo2021/Relay/blob/codex/relay-foundation/docs/dsh-plugins.md)
+## How it works
 
-[![Live npm-installed Relay plugins in official DSH](https://raw.githubusercontent.com/yangbobo2021/Relay/codex/relay-foundation/docs/media/dsh-plugin-suite-demo.gif)](https://github.com/yangbobo2021/Relay/blob/codex/relay-foundation/docs/dsh-plugins.md)
+DSH's LLM service routes a call to whichever adapter owns `options.provider`.
+This plugin registers one adapter under the provider id `claude-agent-sdk`, and
+that adapter:
 
-*Real npm-installed demo on official DSH: live Codex and Claude replies, a
-workspace file preview, and an executed terminal command. [Watch the H.264
-MP4](https://github.com/yangbobo2021/Relay/blob/codex/relay-foundation/docs/media/dsh-plugin-suite-demo.mp4?raw=1).*
+1. Creates (or resumes) a Claude Agent SDK session keyed to the DSH session.
+2. Passes **DSH's** assembled system prompt through as the SDK's `systemPrompt`,
+   with `settingSources: []` so no `~/.claude` settings, `CLAUDE.md`, skills, or
+   hooks load on top of it.
+3. Hands DSH's tools to Claude as an in-process MCP server (`mcp__dsh__*`), so
+   the only tools in context are DSH's. Claude's permission requests surface as
+   DSH's own approval and question prompts.
+4. Projects Claude's reasoning, text, and tool activity into DSH's native stream
+   chunk vocabulary, so the conversation renders like any other model's.
 
-`relay-dsh-plugin-claude` adds **Claude Code as a conversation backend** to the
-official [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
-(DSH) Web UI. After installation, **Claude Code** appears in DSH's New Session
-mode menu. One DSH Session is bound to one Claude Agent SDK session.
+Claude keeps its own agent loop *within* a DSH turn: it calls a tool, reads the
+result, decides again, and returns one answer. DSH's own loop sits out.
 
-![Codex and Claude Code in the DSH New Session mode menu](docs/images/dsh-new-session-backends.jpg)
-
-The screenshot was captured from official DSH `0.1.1-rc.2` with the Codex and
-Claude plugins installed. If you install only this plugin, only **Claude Code**
-is added.
-
-## Do I Need This Plugin?
-
-Install it when you want to:
-
-- use Claude Code inside DSH instead of switching to a separate Claude Code
-  interface;
-- keep DSH's native conversation history, composer, approvals, questions, and
-  tool presentation;
-- let one DSH Session continue the same Claude Agent SDK session across turns;
-- use Claude models, reasoning, interruption, and DSH-contributed tools in the
-  same conversation.
-
-You do not need it to use DSH's standard agents. It also does not add Relay
-Events, file browsing, or a terminal panel. Those are separate optional plugins.
-
-## Quick Start With Official DSH
-
-The steps below were validated with:
-
-- DeepSeek Harness `0.1.1-rc.2`, commit
-  [`b150a551`](https://github.com/deepseek-ai/deepseek-harness/commit/b150a551b8d465e31e418e1b2eaf5e79bbb7d28e)
-- Node.js 22.13 or newer
-- `pnpm` available on `PATH`
-
-DSH is currently a developer preview and may introduce compatibility-breaking
-changes. This repository tracks official releases and records its tested version
-here.
-
-### 1. Prepare Claude Code authentication
-
-The Claude Agent SDK is installed as a normal dependency of this plugin. Before
-starting your first DSH Claude session, complete normal local Claude Code setup
-and authentication for the user that will run DSH.
-
-Follow the official [Claude Code setup documentation](https://code.claude.com/docs/en/setup),
-then start Claude Code once to verify that authentication succeeds:
+## Install
 
 ```bash
-claude
+npx @deepseek-ai/dsh plugin --profile web add dsh-llm-claude-agent-sdk
+npx @deepseek-ai/dsh web
 ```
 
-Credentials stay under Claude Code's normal local authentication mechanism; this
-plugin does not collect them.
+Authenticate Claude Code normally first (`claude`, then sign in). This plugin
+never sees your credentials — see below.
 
-### 2. Choose a package source and install
+## Switching models mid-session
 
-Stop a running DSH Web process before changing Profile bundles. Choose one of
-the following sources.
+The Claude session only knows the turns it answered. When it is created, or when
+another model answered turns while it was deselected, the adapter prepends those
+turns as a `<dsh-session-history>` block so switching providers mid-session does
+not silently drop context.
 
-#### Stable npm release
+Two known limits:
 
-The published npm package name is
-[`relay-dsh-plugin-claude`](https://www.npmjs.com/package/relay-dsh-plugin-claude).
-Use `@latest` to install the current stable release:
+- **Tool work is not shared history.** Claude's tool calls render in the DSH
+  conversation as activity events, but are not written into the message history
+  other models read. A later DeepSeek turn sees Claude's prose, not the
+  individual edits.
+- **DSH-side rewrites are not replayed.** If DSH compacts or edits earlier turns
+  after Claude has seen them, the Claude session keeps the original.
+
+## Anthropic terms compliance
+
+This plugin uses your Claude subscription the way Anthropic's
+[legal and compliance page](https://code.claude.com/docs/en/legal-and-compliance)
+requires: it never collects, stores, or intermediates your credentials.
+
+- The **only** route to Anthropic is `await import("@anthropic-ai/claude-agent-sdk")`
+  — the official SDK, which runs the published Claude Code binary. That binary
+  performs its own authentication and token refresh, exactly as when you run
+  `claude` yourself.
+- No source file reads `~/.claude/.credentials.json`, the macOS Keychain,
+  `CLAUDE_CODE_OAUTH_TOKEN`, or any API-key environment variable.
+- No source file constructs an `Authorization` header or calls
+  `api.anthropic.com` directly.
+
+Verify it yourself:
 
 ```bash
-npx @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile web add relay-dsh-plugin-claude@latest
+grep -rnE "credentials\.json|find-generic-password|CLAUDE_CODE_OAUTH_TOKEN|Authorization|api\.anthropic\.com" *.js *.mjs src internal
 ```
 
-At the time of writing, `latest` resolves to stable version `0.1.0`. The linked
-npm page is the source of truth for the current version.
+Two things that remain your responsibility:
 
-#### npm prerelease (recommended during DSH preview)
+- **Keep DSH bound to localhost.** A DSH instance other people can reach means
+  your subscription is serving their requests, which the terms prohibit.
+- **Use an API key for unattended workloads.** Subscription limits assume
+  "ordinary, individual usage"; batch or scheduled runs belong on a key.
 
-Use `@next` to try the newest release candidate that has passed the repository's
-CI publishing and official DSH compatibility checks. The current candidate also
-contains the latest model-selection synchronization fix:
+## Credits
 
-```bash
-npx @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile web add relay-dsh-plugin-claude@next
-```
+Forked from [`relay-dsh-plugin-claude`](https://github.com/yangbobo2021/relay-dsh-plugin-claude)
+by yangbobo2021 (MIT), which integrates Claude Code as its own DSH *mode*. This
+fork takes the opposite trade: Claude as a *provider* usable from every mode,
+with DSH owning the prompt and tools.
 
-At the time of writing, `next` resolves to `0.1.1-rc.2`.
-
-#### GitHub development build
-
-Install the current `main` branch when testing an unreleased change:
-
-```bash
-npx @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile web add github:yangbobo2021/relay-dsh-plugin-claude#main
-```
-
-`main` can change at any time. For a reproducible GitHub install, pin a Tag or
-full Commit SHA instead. For example:
-
-```bash
-npx @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile web add github:yangbobo2021/relay-dsh-plugin-claude#v0.1.1-rc.2
-```
-
-The official DSH CLI initializes the `web` Profile if it does not exist, asks
-`pnpm` to install the selected package and Claude Agent SDK dependencies, and
-adds the plugin's bundle layer. No Relay checkout is required. The first
-installation can take longer while platform-specific Claude Agent SDK packages
-are downloaded; wait for pnpm's final `Done` message or an explicit error. If
-you already installed the `dsh` command, replace the
-`npx @deepseek-ai/dsh@0.1.1-rc.2` prefix with `dsh` in any command above.
-
-### 3. Start or restart DSH Web
-
-```bash
-npx @deepseek-ai/dsh@0.1.1-rc.2 web
-```
-
-If you use an installed command, run `dsh web` instead. Bundle membership is read
-at startup, so restarting after installation, update, or removal is required.
-
-### 4. Start a Claude Code conversation
-
-1. Open the DSH URL printed in the terminal. The default is
-   `http://127.0.0.1:3080`.
-2. On first launch, read the DSH testing notice and select **Continue**.
-3. Select **Add workspace** in the left sidebar and choose the project directory
-   Claude may work in.
-4. Select **New Session**.
-5. Open the mode menu labeled **Standard mode** and choose **Claude Code**.
-6. Enter a message and send it. Choose the backend before the first message;
-   existing sessions keep the backend with which they were created.
-
-There is no separate activation command. A successful install plus a DSH restart
-activates the bundle and registers the managed **Claude Code** mode automatically.
-
-## What Works
-
-- One persistent Claude Agent SDK session per DSH Session
-- Model and reasoning selection
-- Streaming answers and tool activity in the native DSH conversation
-- DSH approval and user-question flows
-- Interruption and session continuation
-- Generic DSH tools exposed through an in-process Claude SDK MCP server
-
-Tools execute through the owning Agent's DSH tool runtime and remain subject to
-DSH permissions and Claude approval behavior. The tool bridge requires the
-default SDK backend. If a developer explicitly selects the CLI fallback, the
-plugin refuses contributed DSH tools instead of silently dropping them.
-
-## Plugin Boundary and Relay
-
-This repository was designed and compatibility-tested in
-[Relay](https://github.com/yangbobo2021/Relay), an open-source project for
-long-running agent work, external-event delivery, reusable DSH workbench views,
-and multiple conversation backends.
-
-The plugin is independently installable. It has no runtime dependency on the
-Relay application, Relay Events, or another Relay plugin. It does not replace the
-official DSH layout or install Files and Terminal views. This separation lets a
-user install only Claude while the broader Relay project can compose Codex,
-Claude, events, waits, monitors, and workbench extensions when those capabilities
-are needed.
-
-Explore or star Relay to follow that broader work:
-<https://github.com/yangbobo2021/Relay>.
-
-## Update, Inspect, or Remove
-
-Stop DSH Web before changing the bundle, then restart it afterward.
-
-```bash
-# Show why the plugin is installed
-dsh plugin --profile web why relay-dsh-plugin-claude
-
-# Update the npm dependency
-dsh plugin --profile web update relay-dsh-plugin-claude
-
-# Remove it
-dsh plugin --profile web remove relay-dsh-plugin-claude
-```
-
-Use the `npx @deepseek-ai/dsh@0.1.1-rc.2` prefix instead of `dsh` when you do not
-have a persistent DSH command.
-
-## Troubleshooting
-
-### Claude Code is missing from the mode menu
-
-Restart DSH Web. Then run `dsh plugin --profile web why
-relay-dsh-plugin-claude`. If pnpm cannot find the package, repeat the npm
-installation command and read its final error.
-
-### The first message reports an authentication error
-
-Start `claude` in the same user environment that starts DSH and complete normal
-Claude Code authentication. Restart DSH afterward.
-
-### The composer is disabled
-
-DSH requires a workspace before starting a coding conversation. Select **Add
-workspace**, choose a directory, and return to **New Session**.
-
-### Installation says pnpm is missing
-
-Install pnpm using its [official installation guide](https://pnpm.io/installation)
-and confirm `pnpm --version` works in the same terminal.
-
-### DSH changed and the plugin no longer starts
-
-DSH is a developer preview. Include the output of `dsh --version`, the plugin
-source revision, and the startup error in a
-[GitHub issue](https://github.com/yangbobo2021/relay-dsh-plugin-claude/issues).
-
-## Development
-
-```bash
-git clone https://github.com/yangbobo2021/relay-dsh-plugin-claude.git
-cd relay-dsh-plugin-claude
-npm install
-DSH_ROOT=/path/to/deepseek-harness npm run verify
-npm pack
-```
-
-`npm run verify` runs type checking, tests, and the production build. Boundary
-tests reject accidental runtime dependencies on Relay or another feature plugin.
-
-## Feedback
-
-Report bugs and feature requests in this repository's
-[issue tracker](https://github.com/yangbobo2021/relay-dsh-plugin-claude/issues).
+MIT.

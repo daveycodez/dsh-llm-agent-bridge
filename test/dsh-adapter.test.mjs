@@ -10,7 +10,7 @@ import { ClaudeLinkStore } from "../claude-link-store.js";
 import { handleClaudeSdkRequest } from "../claude-tools.js";
 import { installClaudeSessionEventType } from "../host-plugin.js";
 
-test("the Claude preset streams tool activity and answers into the native DSH conversation", async () => {
+test("the provider streams tool activity and answers into the native DSH conversation", async () => {
   const runtime = new FakeRuntime();
   const adapter = new ClaudeDshAdapter({ runtime, ready: Promise.resolve() });
   const agent = fakeAgent();
@@ -18,7 +18,7 @@ test("the Claude preset streams tool activity and answers into the native DSH co
 
   const chunks = [];
   for await (const chunk of adapter.stream({
-    provider: "relay-claude",
+    provider: "claude-agent-sdk",
     model: "sonnet",
     reasoningEffort: "high",
     sessionId: agent.id,
@@ -28,10 +28,11 @@ test("the Claude preset streams tool activity and answers into the native DSH co
     ],
   })) chunks.push(chunk);
 
-  assert.equal(runtime.sent[0].message.text, "actual question");
+  assert.match(runtime.sent[0].message.text, /actual question$/);
+  assert.match(runtime.sent[0].message.text, /<dsh-session-history>[\s\S]*runtime context/);
   assert.equal(runtime.sent[0].message.model, "sonnet");
-  assert.equal(runtime.createdConfig.settingSources.includes("project"), true);
-  assert.equal(runtime.createdConfig.systemPrompt.preset, "claude_code");
+  assert.deepEqual(runtime.createdConfig.settingSources, []);
+  assert.equal(runtime.createdConfig.systemPrompt, undefined);
   assert.equal(chunks.find(chunk => chunk.type === "reasoning-delta").text, "Checked the workspace.");
   assert.equal(chunks.find(chunk => chunk.type === "text-delta").text, "done");
   assert.equal(chunks.at(-1).replayState.claudeSessionId, "claude-1");
@@ -45,34 +46,10 @@ test("Claude models expose native reasoning effort choices", async () => {
   const runtime = new FakeRuntime();
   const adapter = new ClaudeDshAdapter({ runtime, ready: Promise.resolve() });
 
-  const model = await adapter.resolveModel("relay-claude", "sonnet");
+  const model = await adapter.resolveModel("claude-agent-sdk", "sonnet");
 
   assert.deepEqual(model.reasoning.efforts.map(effort => effort.id), ["low", "high"]);
   assert.equal(model.reasoning.defaultEffort, "medium");
-});
-
-test("a Relay activation reaches Claude instead of replaying the previous human message", async () => {
-  const runtime = new FakeRuntime();
-  const adapter = new ClaudeDshAdapter({ runtime, ready: Promise.resolve() });
-  const agent = fakeAgent();
-  adapter.attachAgent(agent);
-
-  for await (const _chunk of adapter.stream({
-    provider: "relay-claude",
-    model: "sonnet",
-    sessionId: agent.id,
-    messages: [
-      { role: "user", source: { kind: "user" }, content: [{ type: "text", text: "wait for the event" }] },
-      { role: "user", source: { kind: "plugin", plugin: "system" }, content: [{ type: "text", text: "generic context" }] },
-      {
-        role: "user",
-        source: { kind: "plugin", plugin: "relay" },
-        content: [{ type: "text", text: "[RELAY EXTERNAL EVENT]\nevent_json: {\"marker\":\"ready\"}" }],
-      },
-    ],
-  })) {}
-
-  assert.equal(runtime.sent[0].message.text, "[RELAY EXTERNAL EVENT]\nevent_json: {\"marker\":\"ready\"}");
 });
 
 test("automatic title generation uses an isolated ephemeral Claude session", async () => {
@@ -83,13 +60,13 @@ test("automatic title generation uses an isolated ephemeral Claude session", asy
 
   const [mainChunks, titleChunks] = await Promise.all([
     collect(adapter.stream({
-      provider: "relay-claude",
+      provider: "claude-agent-sdk",
       model: "sonnet",
       sessionId: agent.id,
       messages: [{ role: "user", source: { kind: "user" }, content: [{ type: "text", text: "list project files" }] }],
     })),
     collect(adapter.stream({
-      provider: "relay-claude",
+      provider: "claude-agent-sdk",
       model: "sonnet",
       sessionId: agent.id,
       purpose: "session-title",
@@ -113,7 +90,7 @@ test("automatic title generation uses an isolated ephemeral Claude session", asy
 });
 
 test("DSH-to-Claude links and configuration survive host restart", async (context) => {
-  const directory = await mkdtemp(join(tmpdir(), "relay-claude-links-"));
+  const directory = await mkdtemp(join(tmpdir(), "claude-sdk-links-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const path = join(directory, "links.json");
   const firstRuntime = new FakeRuntime();
@@ -200,7 +177,7 @@ test("Claude forwards generic DSH tools through a provider-neutral executor", as
   const adapter = new ClaudeDshAdapter({ runtime, ready: Promise.resolve() });
   adapter.attachAgent(agent);
   await collect(adapter.stream({
-    provider: "relay-claude",
+    provider: "claude-agent-sdk",
     model: "sonnet",
     sessionId: agent.id,
     messages: [{ role: "user", source: { kind: "user" }, content: [{ type: "text", text: "use the probe" }] }],
@@ -308,7 +285,7 @@ function fakeAgent({ tools = null } = {}) {
     appended,
     ctx: tools ? { tools } : {},
     session: {
-      header: { agentPreset: "relay-claude", cwd: "/workspace/relay" },
+      header: { agentPreset: "standard", cwd: "/workspace/dsh" },
       events: [],
       append(type, data) { appended.push({ type, data }); },
     },

@@ -16,7 +16,7 @@ test("Claude CLI rejects DSH tools instead of silently omitting them", async () 
 });
 
 test("Claude CLI client uses session, settings, effort, and permission flags", async (context) => {
-  const directory = await mkdtemp(join(tmpdir(), "relay-claude-cli-"));
+  const directory = await mkdtemp(join(tmpdir(), "claude-sdk-cli-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const argsPath = join(directory, "args.json");
   const scriptPath = join(directory, "fake-claude.mjs");
@@ -50,7 +50,7 @@ console.log(JSON.stringify({ type: "result", result: "ok" }));
 });
 
 test("Claude CLI client isolates explicit empty setting sources with safe mode", async (context) => {
-  const directory = await mkdtemp(join(tmpdir(), "relay-claude-cli-safe-"));
+  const directory = await mkdtemp(join(tmpdir(), "claude-sdk-cli-safe-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const argsPath = join(directory, "args.json");
   const scriptPath = join(directory, "fake-claude.mjs");

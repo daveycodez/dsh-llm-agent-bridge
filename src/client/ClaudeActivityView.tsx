@@ -9,7 +9,7 @@ import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ClaudeActivityData } from './claude-activity.ts'
 import css from './ClaudeActivityView.module.css'
 
-type ClaudeActivityViewProps = PropsRuntime<'conversation.chat.node', 'relay-claude-activity'>
+type ClaudeActivityViewProps = PropsRuntime<'conversation.chat.node', 'claude-agent-sdk-activity'>
 
 function dotState(status: ClaudeActivityData['status']): StateDotState {
   if (status === 'running') return 'ongoing'
