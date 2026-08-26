@@ -1,9 +1,8 @@
 import { PluginHost } from "./internal/plugin-sdk.mjs";
 import { createClaudeExecutionPlugin } from "./plugin.mjs";
 import { createDshClaudePlugin } from "./dsh-plugin.js";
-export { installClaudeSessionEventType } from "./dsh-plugin.js";
 
-export const name = "dsh-llm-claude-agent-sdk";
+export const name = "dsh-llm-agent-bridge";
 // `approval` and `userQuestions` back the permission and question bridges in
 // claude-tools.js. Cordis throws "cannot get property 'x' without inject" at
 // the point of use, so an undeclared service fails mid-turn, not at load.
@@ -14,7 +13,7 @@ export const inject = [
 
 export async function apply(ctx, config = {}) {
   const host = new PluginHost();
-  const release = ctx.effect(() => () => host.dispose(), "relay.claude()");
+  const release = ctx.effect(() => () => host.dispose(), "agent-bridge()");
   try {
     await host.activate([
       createClaudeExecutionPlugin({

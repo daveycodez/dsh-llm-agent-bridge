@@ -3,11 +3,8 @@ import { debugLog } from "./debug.js";
 import { dshToolResult } from "./sdk-client.mjs";
 import { telemetryExport, telemetryRefusal } from "./telemetry.js";
 
-// Identification, not branding: the row names the thing it invokes. The
-// session event type below keeps its original name so activity already
-// recorded in existing sessions still renders.
+// Identification, not branding: the row names the thing it invokes.
 export const CLAUDE_PROVIDER = "claude";
-export const CLAUDE_ACTIVITY_EVENT = "claude-agent-sdk/activity";
 
 export class ClaudeDshAdapter extends LlmAdapter {
   constructor({ runtime, ready, linkStore = null, logger = console }) {
@@ -612,37 +609,6 @@ function completeTextItem(state, id, type, completeText) {
     chunks.push({ type: "block-end", index: block.index, block: { type, text: block.text } });
   }
   return chunks;
-}
-
-function activityPayload(claudeSessionId, turnId, item, phase) {
-  const activity = normalizeActivity(item, phase);
-  return { version: 1, claudeSessionId, turnId, itemId: String(item.id), phase, activity };
-}
-
-function normalizeActivity(item, phase) {
-  const type = String(item.type ?? "toolUse");
-  const status = phase === "started" ? "running" : item.status === "failed" ? "error" : "completed";
-  const title = item.tool ?? item.name ?? humanize(type);
-  return bounded({
-    type,
-    status,
-    title,
-    summary: summarizeValue(item.arguments ?? item.input ?? item.prompt),
-    input: item.arguments ?? item.input,
-    output: item.output ?? item.result ?? item.error,
-  });
-}
-
-function bounded(value) {
-  return Object.fromEntries(Object.entries(value).flatMap(([key, entry]) => {
-    if (entry === undefined || entry === null || entry === "") return [];
-    const text = typeof entry === "string" ? entry : JSON.stringify(entry, null, 2);
-    return [[key, text.length > 20_000 ? `${text.slice(0, 20_000)}\n...` : text]];
-  }));
-}
-
-function isActivityItem(item) {
-  return item?.id && !["userMessage", "agentMessage", "reasoning"].includes(item.type);
 }
 
 function permissionConfiguration(events) {

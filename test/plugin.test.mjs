@@ -10,7 +10,7 @@ test("Claude plugin exposes operation capabilities and closes its backend", asyn
   const client = new FakeClaudeClient();
   const host = new PluginHost();
   await host.activate([createClaudeExecutionPlugin({ client, cwd: "/workspace" })]);
-  const execution = host.capabilities.require("relay.execution.claude.v1", "^1.0.0");
+  const execution = host.capabilities.require("agent-bridge.execution.v1", "^1.0.0");
 
   await execution.whenReady();
   assert.deepEqual(execution.listModels().map((model) => model.id), ["claude-test"]);

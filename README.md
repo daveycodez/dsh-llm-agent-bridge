@@ -36,7 +36,9 @@ that adapter:
    of that policy — workspace-write included — which is not how DSH treats its
    own agent's calls.
 5. Projects Claude's reasoning and text into DSH's native stream chunk
-   vocabulary, so the conversation renders like any other model's.
+   vocabulary, so the conversation renders like any other model's. The plugin
+   contributes no client bundle and no renderer of its own: tool work is DSH's
+   to display, from its own trajectory.
 
 Claude still decides what to call and when; DSH executes. One DSH step per model
 call, exactly as with DSH's own models — which is what puts Claude's tool calls

@@ -5,10 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { ClaudeDshAdapter, CLAUDE_ACTIVITY_EVENT } from "../claude-adapter.js";
+import { ClaudeDshAdapter } from "../claude-adapter.js";
 import { ClaudeLinkStore } from "../claude-link-store.js";
 import { handleClaudeSdkRequest } from "../claude-tools.js";
-import { installClaudeSessionEventType } from "../host-plugin.js";
 
 test("a tool call is handed to DSH as a tool-call finish, and the answer resumes the same turn", async () => {
   const runtime = new FakeRuntime();
@@ -119,8 +118,7 @@ test("DSH-to-Claude links and configuration survive host restart", async (contex
   assert.equal(secondRuntime.resumed, 1);
 });
 
-test("concurrent first messages create one Claude session and DSH accepts durable activity", async () => {
-  installClaudeSessionEventType();
+test("concurrent first messages create exactly one Claude session", async () => {
   const runtime = new FakeRuntime();
   const adapter = new ClaudeDshAdapter({ runtime, ready: Promise.resolve() });
   const [left, right] = await Promise.all([adapter.ensureSession("dsh-1"), adapter.ensureSession("dsh-1")]);

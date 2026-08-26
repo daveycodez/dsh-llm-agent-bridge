@@ -3,19 +3,19 @@ import { ClaudeCliClient } from "./cli-client.mjs";
 import { ClaudeSdkClient } from "./sdk-client.mjs";
 import { ClaudeSessionRuntime } from "./session-runtime.mjs";
 
-export const CLAUDE_EXECUTION_CAPABILITY = "relay.execution.claude.v1";
+export const CLAUDE_EXECUTION_CAPABILITY = "agent-bridge.execution.v1";
 
 export function createClaudeExecutionPlugin(config = {}) {
   return definePlugin({
     manifest: {
-      id: "relay.execution.claude",
+      id: "agent-bridge.execution",
       version: "1.0.0",
       provides: { [CLAUDE_EXECUTION_CAPABILITY]: "1.0.0" },
-      optional: { "relay.logging.v1": "^1.0.0" },
+      optional: { "agent-bridge.logging.v1": "^1.0.0" },
       permissions: ["process:claude", "filesystem:workspace"],
     },
     activate({ capabilities, defer }) {
-      const logger = capabilities.optional("relay.logging.v1") ?? console;
+      const logger = capabilities.optional("agent-bridge.logging.v1") ?? console;
       const client = config.client ?? createClaudeClient(config);
       const runtime = new ClaudeSessionRuntime({ client, cwd: config.cwd ?? process.cwd() });
       defer(() => runtime.close());
