@@ -412,7 +412,7 @@ export class ClaudeDshAdapter extends LlmAdapter {
       .map((message, index) => ({ message, index }))
       .filter(entry => entry.index >= seen && entry.index !== instruction)
       .map(entry => {
-        const body = messageText(entry.message);
+        const body = seedText(entry.message);
         return body ? `${entry.message.role ?? "user"}: ${body}` : "";
       })
       .filter(Boolean)
@@ -703,6 +703,36 @@ function latestUserIndex(messages) {
 function refuseWhileExporting() {
   const exporting = telemetryExport();
   if (exporting) throw new Error(telemetryRefusal(exporting));
+}
+
+/**
+ * Render one message for the catch-up block.
+ *
+ * Unlike {@link messageText} this keeps the tool work, because a turn answered
+ * by another model is mostly tool calls and their results — carrying only the
+ * prose would hand Claude a summary of work it cannot see. Results are bounded:
+ * this is context, not a transcript.
+ */
+function seedText(message) {
+  const parts = [];
+  for (const block of message?.content ?? []) {
+    if (block?.type === "text" && block.text?.trim()) parts.push(block.text.trim());
+    if (block?.type === "tool-call") parts.push(`called ${block.name}(${bound(block.arguments, 400)})`);
+    if (block?.type === "tool-result") {
+      const text = (block.content ?? [])
+        .filter(inner => inner?.type === "text")
+        .map(inner => inner.text)
+        .join("\n")
+        .trim();
+      if (text) parts.push(`${block.isError ? "tool failed" : "tool result"}: ${bound(text, 1500)}`);
+    }
+  }
+  return parts.join("\n").trim();
+}
+
+function bound(value, limit) {
+  const text = String(value ?? "");
+  return text.length > limit ? `${text.slice(0, limit)}…` : text;
 }
 
 function messageText(message) {

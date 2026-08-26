@@ -249,6 +249,7 @@ export class ClaudeSdkClient extends EventEmitter {
   }
 
   queryOptions(session, message, abortController, turnId) {
+    const bridge = dshMcpOptions(this.sdk, message, (name, args) => this.parkToolCall(session.id, turnId, name, args));
     return {
       abortController,
       cwd: message.cwd ?? session.cwd ?? process.cwd(),
@@ -263,8 +264,14 @@ export class ClaudeSdkClient extends EventEmitter {
       pathToClaudeCodeExecutable: this.pathToClaudeCodeExecutable,
       includePartialMessages: true,
       ...(session.created ? { resume: session.id } : { sessionId: session.id }),
-      canUseTool: (toolName, input, options) => this.requestPermission(session.id, toolName, input, options),
-      ...dshMcpOptions(this.sdk, message, (name, args) => this.parkToolCall(session.id, turnId, name, args)),
+      // Only ask for the permission callback when something could actually
+      // reach it. Every bridged tool is pre-approved here because DSH gates and
+      // executes them, so passing the callback as well makes the SDK warn that
+      // it is shadowed — accurately, and on every turn.
+      ...(bridge.allowedTools
+        ? {}
+        : { canUseTool: (toolName, input, options) => this.requestPermission(session.id, toolName, input, options) }),
+      ...bridge,
     };
   }
 

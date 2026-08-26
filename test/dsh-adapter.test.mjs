@@ -409,3 +409,29 @@ test("a result nothing is waiting for fails the turn rather than parking it", as
     messages: [...messages, { role: "user", content: [{ type: "tool-result", toolCallId: call.block.id, content: [] }] }],
   })), /No Claude tool call is waiting/);
 });
+
+test("a turn answered by another model carries its tool work, not just its prose", async () => {
+  const runtime = new FakeRuntime();
+  const adapter = new ClaudeDshAdapter({ runtime, ready: Promise.resolve() });
+  const agent = fakeAgent();
+  adapter.attachAgent(agent);
+
+  await collect(adapter.stream({
+    provider: "claude",
+    model: "sonnet",
+    sessionId: agent.id,
+    messages: [
+      // What DSH's history looks like after another provider answered a turn.
+      { role: "user", source: { kind: "user" }, content: [{ type: "text", text: "read package.json" }] },
+      { role: "assistant", content: [{ type: "tool-call", id: "c1", name: "read", arguments: '{"file_path":"package.json"}' }] },
+      { role: "user", content: [{ type: "tool-result", toolCallId: "c1", content: [{ type: "text", text: '{"name":"auth-ts","devDependencies":{"nx":"23.1.1"}}' }] }] },
+      { role: "assistant", content: [{ type: "text", text: "It pins nx." }] },
+      { role: "user", source: { kind: "user" }, content: [{ type: "text", text: "what version was that?" }] },
+    ],
+  }));
+
+  const sent = runtime.sent[0].message.text;
+  assert.match(sent, /tool result: .*23\.1\.1/, "the other model's tool output must reach Claude");
+  assert.match(sent, /called read/, "and what it called to get it");
+  assert.match(sent, /what version was that\?$/, "with the live question last");
+});
