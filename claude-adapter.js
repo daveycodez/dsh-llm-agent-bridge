@@ -30,7 +30,10 @@ export class ClaudeDshAdapter extends LlmAdapter {
   }
 
   providerInfo() {
-    return { id: CLAUDE_PROVIDER, name: "Claude" };
+    // Anthropic's Agent SDK branding guidance names "Claude Agent" as the
+    // preferred form for a dropdown; bare "Claude" is only for a menu already
+    // labelled "Agents", and DSH's is a model picker.
+    return { id: CLAUDE_PROVIDER, name: "Claude Agent" };
   }
 
   async listModels() {

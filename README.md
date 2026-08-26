@@ -11,7 +11,7 @@ its conversation history; Claude does the thinking.
 ## How it works
 
 DSH's LLM service routes a call to whichever adapter owns `options.provider`.
-This plugin registers one adapter under the provider id `claude`, and
+This plugin registers one adapter under the provider id `claude` (shown as **Claude Agent**), and
 that adapter:
 
 1. Creates (or resumes) a Claude Agent SDK session keyed to the DSH session.
@@ -58,7 +58,7 @@ never sees your credentials — see below.
 
 The Claude session only knows the turns it answered. When it is created, or when
 another model answered turns while it was deselected, the adapter prepends those
-turns as a `<dsh-session-history>` block so switching providers mid-session does
+turns as a `<dsh-context>` block so switching providers mid-session does
 not silently drop context.
 
 Tool calls and their results live in DSH's own message history, so a later
