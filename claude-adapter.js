@@ -1,4 +1,5 @@
 import { LlmAdapter } from "@deepseek-ai/dsh-llm";
+import { telemetryExport, telemetryRefusal } from "./telemetry.js";
 
 // Identification, not branding: the row names the thing it invokes. The
 // session event type below keeps its original name so activity already
@@ -158,6 +159,7 @@ export class ClaudeDshAdapter extends LlmAdapter {
   }
 
   async *stream(options) {
+    refuseWhileExporting();
     if (options.purpose) {
       yield* this.streamAuxiliary(options);
       return;
@@ -248,6 +250,7 @@ export class ClaudeDshAdapter extends LlmAdapter {
   }
 
   async *streamAuxiliary(options) {
+    refuseWhileExporting();
     await this.ready;
     const text = auxiliaryInput(options.messages);
     if (!text) throw new Error(`Relay Claude adapter received no ${options.purpose} input`);
@@ -556,6 +559,17 @@ function latestUserIndex(messages) {
     if (fallback === -1) fallback = index;
   }
   return fallback;
+}
+
+/**
+ * Refuse before a single token reaches Claude. DSH's exporter ships unredacted
+ * session records, so a turn taken while it is on would put Claude's output on
+ * a competitor's collector. The throw becomes DSH's terminal error chunk and
+ * renders inline in the conversation.
+ */
+function refuseWhileExporting() {
+  const exporting = telemetryExport();
+  if (exporting) throw new Error(telemetryRefusal(exporting));
 }
 
 function messageText(message) {

@@ -23,10 +23,12 @@ that adapter:
    `allowedTools` alone only pre-approves, it does not scope, and the built-ins
    would win. `toolAliases` redirects built-in names at the DSH tool of the same
    name, since DSH's prompt refers to its tools bare ("use the read tool").
-   Claude's permission requests surface as DSH's own approval prompts: the
-   bridged tools are deliberately *not* listed in `allowedTools` unless DSH's
-   policy is never-ask, because a bare `allowedTools` entry auto-approves the
-   tool before `canUseTool` runs and would silently bypass the prompt.
+   The bridged tools *are* listed in `allowedTools`, which pre-approves them at
+   the SDK layer on purpose: they run through DSH's tool runtime, which resolves
+   "ask" decisions through its own approval seam against the session's sandbox
+   policy. Gating at the SDK layer as well would prompt on every call regardless
+   of that policy — workspace-write included — which is not how DSH treats its
+   own agent's calls.
 4. Projects Claude's reasoning, text, and tool activity into DSH's native stream
    chunk vocabulary, so the conversation renders like any other model's.
 
@@ -93,7 +95,9 @@ Two things that remain your responsibility:
   entirely. Don't tunnel DSH.
 - **Use an API key for unattended workloads.** Subscription limits assume
   "ordinary, individual usage"; batch or scheduled runs belong on a key.
-- **Leave DSH's telemetry off.** `@deepseek-ai/dsh-base` mounts an OTLP exporter
+- **Leave DSH's telemetry off.** The plugin enforces this: if it detects an
+  enabled exporter it refuses the turn with an inline error rather than sending
+  anything to Claude. `@deepseek-ai/dsh-base` mounts an OTLP exporter
   pointed at `harness-telemetry.deepseeksvc.com`. It defaults to `DISABLED` and
   stays off unless you set `DSH_TELEMETRY_MODE`, but DSH's own note says
   uploading mirrors session-log records "with no session-telemetry/record

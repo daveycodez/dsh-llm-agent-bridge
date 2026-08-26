@@ -309,12 +309,12 @@ function dshMcpOptions(sdk, message, signal) {
     mcpServers: {
       dsh: sdk.createSdkMcpServer({ name: "dsh", version: "1.0.0", tools, alwaysLoad: true }),
     },
-    // Only pre-approve when DSH's policy is "never ask". A bare allowedTools
-    // entry auto-approves the tool *before* canUseTool runs, which silently
-    // bypasses DSH's approval prompt — the SDK warns about exactly this.
-    ...(message.approvalPolicy === "never"
-      ? { allowedTools: schemas.map(schema => `mcp__dsh__${schema.name}`) }
-      : {}),
+    // Pre-approve at the SDK layer on purpose. These are DSH's own tools, run
+    // by DSH's tool runtime, which resolves "ask" decisions through its own
+    // approval seam against the session's sandbox policy. Gating here as well
+    // would prompt for every call regardless of that policy — workspace-write
+    // included — which is not how DSH treats its own agent's calls.
+    allowedTools: schemas.map(schema => `mcp__dsh__${schema.name}`),
     // DSH's prompt names its tools bare ("use the read tool"), so a model that
     // emits `Read` or `Bash` is following instructions, not hallucinating.
     // Route those names at the DSH tool of the same name instead of failing.
