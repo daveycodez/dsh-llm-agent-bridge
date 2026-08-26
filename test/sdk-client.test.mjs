@@ -264,3 +264,23 @@ test("an unavailable catalog falls back to the built-in model list", async () =>
   assert.equal(models.some(model => model.id === "sonnet"), true);
   assert.match(diagnostics[0], /catalog unavailable/);
 });
+
+test("Claude Code's own tools are removed from context so DSH owns the toolset", async () => {
+  let captured = null;
+  const sdk = {
+    query(params) { captured = params.options; return Object.assign((async function* () {})(), { close() {}, interrupt: async () => {} }); },
+    createSdkMcpServer: config => ({ config }),
+    tool: (name, description, shape, handler) => ({ name, description, shape, handler }),
+  };
+  const client = new ClaudeSdkClient({ sdk });
+  const session = await client.createSession({ sessionId: "s1", cwd: "/workspace" });
+  await client.sendMessage(session.id, {
+    text: "hi",
+    dshTools: [{ name: "bash", description: "run a command", parameters: { type: "object", properties: { command: { type: "string" } }, required: ["command"] } }],
+    executeDshTool: async () => ({ content: [{ type: "text", text: "ok" }] }),
+  });
+
+  assert.deepEqual(captured.tools, [], "no built-in tools may remain in context");
+  assert.deepEqual(captured.allowedTools, ["mcp__dsh__bash"]);
+  assert.deepEqual(captured.toolAliases, { Bash: "mcp__dsh__bash" });
+});

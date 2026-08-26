@@ -212,6 +212,9 @@ export class ClaudeSdkClient extends EventEmitter {
       model: message.model ?? session.config?.model,
       effort: message.effort ?? session.config?.effort,
       permissionMode: sdkPermissionMode(message),
+      // DSH owns the toolset. Without this, Claude Code's built-ins stay in
+      // context and win — `allowedTools` only pre-approves, it does not scope.
+      tools: [],
       settingSources: message.settingSources ?? session.config?.settingSources ?? ["user", "project", "local"],
       systemPrompt: message.systemPrompt ?? session.config?.systemPrompt,
       pathToClaudeCodeExecutable: this.pathToClaudeCodeExecutable,
@@ -305,6 +308,13 @@ function dshMcpOptions(sdk, schemas, execute, signal) {
       dsh: sdk.createSdkMcpServer({ name: "dsh", version: "1.0.0", tools, alwaysLoad: true }),
     },
     allowedTools: schemas.map(schema => `mcp__dsh__${schema.name}`),
+    // DSH's prompt names its tools bare ("use the read tool"), so a model that
+    // emits `Read` or `Bash` is following instructions, not hallucinating.
+    // Route those names at the DSH tool of the same name instead of failing.
+    toolAliases: Object.fromEntries(schemas.map(schema => [
+      `${schema.name.charAt(0).toUpperCase()}${schema.name.slice(1)}`,
+      `mcp__dsh__${schema.name}`,
+    ])),
   };
 }
 

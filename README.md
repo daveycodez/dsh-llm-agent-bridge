@@ -18,9 +18,12 @@ that adapter:
 2. Passes **DSH's** assembled system prompt through as the SDK's `systemPrompt`,
    with `settingSources: []` so no `~/.claude` settings, `CLAUDE.md`, skills, or
    hooks load on top of it.
-3. Hands DSH's tools to Claude as an in-process MCP server (`mcp__dsh__*`), so
-   the only tools in context are DSH's. Claude's permission requests surface as
-   DSH's own approval and question prompts.
+3. Hands DSH's tools to Claude as an in-process MCP server (`mcp__dsh__*`) and
+   passes `tools: []` so Claude Code's own built-ins are removed from context —
+   `allowedTools` alone only pre-approves, it does not scope, and the built-ins
+   would win. `toolAliases` redirects built-in names at the DSH tool of the same
+   name, since DSH's prompt refers to its tools bare ("use the read tool").
+   Claude's permission requests surface as DSH's own approval prompts.
 4. Projects Claude's reasoning, text, and tool activity into DSH's native stream
    chunk vocabulary, so the conversation renders like any other model's.
 
