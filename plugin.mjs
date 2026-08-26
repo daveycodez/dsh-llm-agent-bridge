@@ -75,7 +75,19 @@ function createClaudeCliClient(config) {
   });
 }
 
-class FallbackClaudeClient extends ClaudeCliClient {
+/**
+ * Every client method the runtime reaches for. The fallback wrapper forwards
+ * this list verbatim; a method missing from it silently resolves against the
+ * CLI stub it inherits, which is how a parked tool call once became
+ * unresolvable while its result sat in the SDK client next door.
+ */
+export const DELEGATED_CLIENT_METHODS = [
+  "listModels", "createSession", "resumeSession", "sendMessage", "interruptTurn",
+  "releaseSession", "resolveRequest", "rejectRequest",
+  "resolveToolCall", "rejectToolCall", "rejectAllToolCalls", "close",
+];
+
+export class FallbackClaudeClient extends ClaudeCliClient {
   constructor({ primary, fallback }) {
     super();
     this.primary = primary;
@@ -97,16 +109,12 @@ class FallbackClaudeClient extends ClaudeCliClient {
       this.active = this.fallback;
     }
   }
+}
 
-  listModels(...args) { return this.active.listModels(...args); }
-  createSession(...args) { return this.active.createSession(...args); }
-  resumeSession(...args) { return this.active.resumeSession(...args); }
-  sendMessage(...args) { return this.active.sendMessage(...args); }
-  interruptTurn(...args) { return this.active.interruptTurn(...args); }
-  releaseSession(...args) { return this.active.releaseSession(...args); }
-  resolveRequest(...args) { return this.active.resolveRequest?.(...args); }
-  rejectRequest(...args) { return this.active.rejectRequest?.(...args); }
-  close(...args) { return this.active.close(...args); }
+for (const method of DELEGATED_CLIENT_METHODS) {
+  FallbackClaudeClient.prototype[method] = function delegate(...args) {
+    return this.active[method]?.(...args);
+  };
 }
 
 function subscribe(emitter, event, listener) {

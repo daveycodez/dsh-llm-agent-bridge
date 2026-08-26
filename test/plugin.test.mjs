@@ -54,3 +54,44 @@ test("every service the plugin dereferences at runtime is declared in inject", a
     assert.ok(inject.includes(name), `ctx.${name} is used but not declared in inject; cordis throws only when the line runs`);
   }
 });
+
+test("the fallback client forwards every method the runtime calls on it", async () => {
+  const { DELEGATED_CLIENT_METHODS } = await import("../plugin.mjs");
+  const runtimeSource = await readFile(new URL("../session-runtime.mjs", import.meta.url), "utf8");
+
+  const used = new Set();
+  for (const [, name] of runtimeSource.matchAll(/this\.client\.([a-zA-Z][a-zA-Z0-9]*)/g)) used.add(name);
+  // `start` is the wrapper's own decision point, and `on` comes from EventEmitter.
+  used.delete("start");
+  used.delete("on");
+
+  for (const name of used) {
+    assert.ok(
+      DELEGATED_CLIENT_METHODS.includes(name),
+      `the runtime calls client.${name}, but the fallback wrapper does not forward it — it would resolve against the inherited CLI stub instead of the active client`,
+    );
+  }
+});
+
+test("a parked call resolves through the fallback wrapper, not the stub it inherits", async () => {
+  const { FallbackClaudeClient } = await import("../plugin.mjs");
+  const { ClaudeSdkClient } = await import("../sdk-client.mjs");
+
+  // The shape that broke live: backend "auto", so the runtime holds the wrapper
+  // while the parked call lives on the SDK client behind it.
+  const primary = new ClaudeSdkClient({ sdk: {} });
+  const fallback = new (await import("../cli-client.mjs")).ClaudeCliClient();
+  const client = new FallbackClaudeClient({ primary, fallback });
+  client.active = primary;
+
+  const parked = [];
+  primary.on("activity", message => { if (message.method === "tool/parked") parked.push(message.params); });
+  const pending = primary.parkToolCall("claude-1", "turn-1", "bash", { command: "pwd" });
+
+  assert.equal(
+    client.resolveToolCall(parked[0].parkId, { content: [{ type: "text", text: "ok" }] }),
+    true,
+    "the wrapper must reach the active client; the inherited CLI stub always returns false",
+  );
+  assert.deepEqual((await pending).content, [{ type: "text", text: "ok" }]);
+});
