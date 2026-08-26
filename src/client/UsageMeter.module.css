@@ -1,0 +1,133 @@
+/* Chrome mirrors the shipped ContextMeter so the two seats in the composer's
+   trailing row are indistinguishable: a 28x28 round trigger with the
+   interactive hover fill, and a menu-token panel whose children inherit one
+   12/20 type scale. Only ContextMeter's two text tones appear here —
+   label-primary at weight 500 for figures, label-tertiary for muted copy. */
+
+.root {
+  display: inline-flex;
+  position: relative;
+  /* The model trigger's padding is asymmetric (0 4px 0 8px), so without this
+     the gap on our side of the dropdown reads 27px against the context ring's
+     23px on the other. Cancels exactly that difference. */
+  margin-right: -4px;
+}
+
+.trigger {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  cursor: pointer;
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+
+.trigger:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.track {
+  fill: none;
+  stroke: var(--dsw-alias-border-l3);
+  stroke-width: 2px;
+}
+
+.fill {
+  fill: none;
+  stroke-width: 2px;
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.3s ease, stroke 0.3s ease;
+}
+
+/* 320px: the widest row ("Weekly · all models" + "Resets Thu 11:59 AM" + a
+   percent, plus two 8px gaps) measures ~273px, which clears this content box
+   but not the 238px ContextMeter's 264px would leave. */
+.panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 100;
+  box-sizing: border-box;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-border-inverted);
+  border-radius: 12px;
+  background: var(--dsw-specific-menu);
+  box-shadow: var(--dsw-shadow-lv3);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  cursor: default;
+}
+
+/* Leading trim. A 12px glyph in a 20px line box carries 4px of half-leading,
+   so without this the caption's ink sits 16px below the top edge while the
+   last bar — a solid block with no leading — sits 12px above the bottom, and
+   the panel reads top-heavy. ContextMeter never needs it because its first
+   and last children are both text. */
+.caption {
+  margin: -4px 0 10px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.limit + .limit {
+  margin-top: 12px;
+}
+
+.line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.name {
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reset {
+  margin-left: auto;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+  flex: none;
+}
+
+.percent {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex: none;
+}
+
+/* Percent with no reset phrase beside it still trails the row. */
+.percentAlone {
+  margin-left: auto;
+}
+
+.bar {
+  height: 4px;
+  margin-top: 6px;
+  border-radius: 999px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+.empty {
+  color: var(--dsw-alias-label-tertiary);
+}

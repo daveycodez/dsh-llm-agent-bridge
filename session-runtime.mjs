@@ -145,6 +145,11 @@ export class ClaudeSessionRuntime extends EventEmitter {
     return structuredClone(turn);
   }
 
+  /** The subscription's plan-limit windows, for the composer ring. */
+  planUsage() {
+    return this.client.planUsage?.() ?? Promise.resolve({ supported: false });
+  }
+
   /** Context capacity for one catalog row, as the backend reports it. */
   contextWindowFor(model, resolvedModel) {
     return this.client.contextWindowFor?.(model, resolvedModel) ?? null;

@@ -58,6 +58,29 @@ npx @deepseek-ai/dsh web
 Authenticate Claude Code normally first (`claude`, then sign in). This plugin
 never sees your credentials — see below.
 
+## Plan usage in the composer
+
+A usage ring sits in the composer's tool row while a Claude row is selected,
+reporting the subscription limit that matters for the current model and opening
+a panel of every reported window:
+
+```
+Plan usage limits · Max
+  5-hour limit          Resets in 1 hr 8 min    10%
+  Weekly · all models   Resets in 19 hr 18 min  81%
+  Weekly · Fable        Resets in 19 hr 18 min  100%
+```
+
+The numbers come from the Agent SDK's own usage reporting — the same source as
+Claude Code's `/usage` — served to the browser over this plugin's `/agent-bridge`
+channel. No credential is read and no other plugin is required.
+
+Reading them costs a Claude Code control session, so the answer is cached on the
+host and again in the browser, with no idle polling: the ring revalidates when
+you interact with it or while a turn runs, never on a timer. The underlying SDK
+method is explicitly experimental, so a failure to read leaves the ring hidden
+rather than failing anything.
+
 ## Switching models mid-session
 
 The Claude session only knows the turns it answered. When it is created, or when

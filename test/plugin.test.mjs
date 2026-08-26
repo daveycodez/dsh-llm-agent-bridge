@@ -48,7 +48,9 @@ test("every service the plugin dereferences at runtime is declared in inject", a
   for (const source of sources) {
     for (const [, name] of source.matchAll(/\bctx\.([a-zA-Z][a-zA-Z0-9]*)\b/g)) used.add(name);
   }
-  used.delete("on"); used.delete("effect"); used.delete("logger"); used.delete("llm");
+  // cordis's own context API, not services: on/effect/inject/plugin, plus the
+  // logger every context carries and llm, declared under its service name.
+  for (const method of ["on", "effect", "inject", "plugin", "logger", "llm"]) used.delete(method);
 
   for (const name of used) {
     assert.ok(inject.includes(name), `ctx.${name} is used but not declared in inject; cordis throws only when the line runs`);

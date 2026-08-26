@@ -7,6 +7,33 @@ import { ClaudeLinkStore } from "./claude-link-store.js";
 import { createTelemetryControl } from "./telemetry-control.js";
 import { handleClaudeSdkRequest } from "./claude-tools.js";
 
+/** Logical channel this plugin serves; the composer ring is its only caller today. */
+export const AGENT_BRIDGE_CHANNEL = "/agent-bridge";
+
+/**
+ * Serve the browser half's reads.
+ *
+ * `connection` is absent in headless profiles, so this mounts through
+ * `ctx.inject` rather than the plugin's own dependency list — a headless run
+ * must not park waiting for a service it never needs. Loopback authority
+ * matches the other plugin channels DSH ships: this answers the local UI only.
+ */
+function serveUsageChannel(ctx, runtime) {
+  return ctx.inject(["connection"], (scoped) => {
+    const connection = scoped.get("connection");
+    scoped.effect(() => connection.rpc.handle(AGENT_BRIDGE_CHANNEL, async (endpoint) => {
+      if (endpoint !== "usage") {
+        return { ok: false, error: { message: `unknown ${AGENT_BRIDGE_CHANNEL} endpoint "${endpoint}"` } };
+      }
+      try {
+        return { ok: true, value: await runtime.planUsage() };
+      } catch (error) {
+        return { ok: false, error: { message: String(error?.message ?? error) } };
+      }
+    }, { authority: "loopback" }), `agent-bridge: ${AGENT_BRIDGE_CHANNEL} rpc channel`);
+  });
+}
+
 export function createDshClaudePlugin(ctx, config = {}) {
   return definePlugin({
     manifest: {
@@ -31,6 +58,7 @@ export function createDshClaudePlugin(ctx, config = {}) {
       }));
       defer(ctx.on("agent/created", ({ agent }) => { adapter.attachAgent(agent); }));
       defer(ctx.on("agent/disposed", ({ agent }) => { adapter.detachAgent(agent.id); }));
+      defer(serveUsageChannel(ctx, runtime));
       for (const agent of ctx.agents.list()) adapter.attachAgent(agent);
       return { capabilities: { "agent-bridge.dsh.v1": Object.freeze({ provider: CLAUDE_PROVIDER }) } };
     },

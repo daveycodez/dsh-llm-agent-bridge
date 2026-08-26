@@ -16,14 +16,18 @@
     "build": "tsdown --config tsdown.config.ts",
     "postbuild": "node normalize-build.mjs",
     "test": "node --test test/*.test.mjs",
-    "verify": "npm test && npm run build"
+    "verify": "npm run typecheck && npm test && npm run build",
+    "typecheck": "tsc -p tsconfig.json"
   },
   "exports": {
     ".": "./lib/host-plugin.js",
+    "./client": "./lib/client.js",
     "./typert": "./lib/typert.host.js",
     "./package.json": "./package.json"
   },
   "files": [
+    "lib/client.js",
+    "lib/client.js.map",
     "lib/host-plugin.js",
     "lib/host-plugin.js.map",
     "lib/typert.host.js",
@@ -34,6 +38,14 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
     }
   },
   "dependencies": {
@@ -58,10 +70,17 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-client-runtime": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.1-rc.2",
     "@deepseek-ai/dsh-llm": "0.1.1-rc.2",
     "@deepseek-ai/dsh-session": "0.1.1-rc.2",
     "@deepseek-ai/dsh-session-telemetry-otel": "0.1.1-rc.2",
     "@deepseek-ai/dsh-typert-protocol": "0.1.1-rc.2",
+    "@types/react": "~18.3.31",
+    "lightningcss": "1.32.0",
+    "react": "^18.3.1",
     "tsdown": "0.22.2",
     "typescript": "6.0.3",
     "unrun": "^0.3.1"

@@ -1,11 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { z } from "zod";
+import { planUsageFrom } from "./plan-usage.js";
 
 /**
  * Only a fallback: the live catalog comes from the SDK's supportedModels(), so
  * new model families appear without a release here.
  */
+/** How long one plan reading serves every asker on the host. */
+const PLAN_USAGE_TTL_MS = 120_000;
+
 const DEFAULT_MODELS = [
   { id: "opus", displayName: "Opus 5", isDefault: true, supportedReasoningEfforts: reasoningEfforts() },
   { id: "fable", displayName: "Fable 5", isDefault: false, supportedReasoningEfforts: reasoningEfforts() },
@@ -96,11 +100,12 @@ function disambiguate(models, rows) {
 }
 
 export class ClaudeSdkClient extends EventEmitter {
-  constructor({ sdk = null, pathToClaudeCodeExecutable = undefined, requestTimeoutMs = 30 * 60_000 } = {}) {
+  constructor({ sdk = null, pathToClaudeCodeExecutable = undefined, requestTimeoutMs = 30 * 60_000, clock = Date.now } = {}) {
     super();
     this.sdk = sdk;
     this.pathToClaudeCodeExecutable = pathToClaudeCodeExecutable;
     this.requestTimeoutMs = requestTimeoutMs;
+    this.clock = clock;
     this.sessions = new Map();
     this.queries = new Map();
     this.pendingRequests = new Map();
@@ -109,6 +114,8 @@ export class ClaudeSdkClient extends EventEmitter {
     this.pendingToolCalls = new Map();
     // Context capacity per canonical model, learned from result messages.
     this.contextWindows = new Map();
+    this.planUsageCache = null;
+    this.planUsageInflight = null;
     this.closed = false;
   }
 
@@ -188,6 +195,59 @@ export class ClaudeSdkClient extends EventEmitter {
     }
     // Until a turn has run: the [1m] rows are the long-context variants.
     return /\[1m\]$/.test(String(resolvedModel ?? model)) ? 1_000_000 : 200_000;
+  }
+
+/**
+   * The subscription's plan-limit windows.
+   *
+   * Reading them costs a control session — the SDK spawns Claude Code — so the
+   * answer is held briefly. The client that renders it keeps a longer floor of
+   * its own; this one exists so several sessions asking at once cost one read.
+   *
+   * The underlying API is named for its own instability, so a failure here is
+   * reported as "unsupported" rather than raised: a ring that cannot draw is a
+   * missing ring, never a broken turn.
+   */
+  async planUsage() {
+    const now = this.clock();
+    if (this.planUsageCache && now - this.planUsageCache.at < PLAN_USAGE_TTL_MS) {
+      return this.planUsageCache.value;
+    }
+    if (this.planUsageInflight) return this.planUsageInflight;
+
+    this.planUsageInflight = this.readPlanUsage()
+      .catch(error => {
+        this.emit("diagnostic", `Claude plan usage unavailable: ${error?.message ?? error}`);
+        return { supported: false };
+      })
+      .then(value => {
+        this.planUsageCache = { at: this.clock(), value };
+        this.planUsageInflight = null;
+        return value;
+      });
+    return this.planUsageInflight;
+  }
+
+  async readPlanUsage() {
+    if (!this.sdk) await this.start();
+    if (typeof this.sdk.query !== "function") return { supported: false };
+    let release;
+    const idle = new Promise((resolve) => { release = resolve; });
+    const prompt = (async function* () { await idle; })();
+    const query = this.sdk.query({
+      prompt,
+      options: {
+        ...(this.pathToClaudeCodeExecutable ? { pathToClaudeCodeExecutable: this.pathToClaudeCodeExecutable } : {}),
+      },
+    });
+    try {
+      const read = query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;
+      if (typeof read !== "function") return { supported: false };
+      return planUsageFrom(await read.call(query));
+    } finally {
+      release();
+      query.close?.();
+    }
   }
 
   async listModels() {
