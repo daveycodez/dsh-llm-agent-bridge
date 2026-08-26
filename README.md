@@ -11,7 +11,7 @@ its conversation history; Claude does the thinking.
 ## How it works
 
 DSH's LLM service routes a call to whichever adapter owns `options.provider`.
-This plugin registers one adapter under the provider id `claude` (shown as **Claude Agent**), and
+This plugin registers one adapter under the provider id `claude`, and
 that adapter:
 
 1. Creates (or resumes) a Claude Agent SDK session keyed to the DSH session.

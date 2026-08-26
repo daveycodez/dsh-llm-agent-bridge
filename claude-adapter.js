@@ -30,10 +30,14 @@ export class ClaudeDshAdapter extends LlmAdapter {
   }
 
   providerInfo() {
-    // Anthropic's Agent SDK branding guidance names "Claude Agent" as the
-    // preferred form for a dropdown; bare "Claude" is only for a menu already
-    // labelled "Agents", and DSH's is a model picker.
-    return { id: CLAUDE_PROVIDER, name: "Claude Agent" };
+    // Anthropic's Agent SDK branding guidance lists both "Claude Agent"
+    // (preferred for dropdowns) and bare "Claude" (within a menu labelled
+    // "Agents") as allowed. DSH's picker has no such heading, so the literal
+    // reading favours the former — but "preferred" is not "required", and bare
+    // "Claude" is what every BYO-subscription harness ships, T3 Code included.
+    // What the guidance forbids is naming the product after Claude Code, which
+    // nothing here does.
+    return { id: CLAUDE_PROVIDER, name: "Claude" };
   }
 
   async listModels() {
