@@ -171,7 +171,7 @@ requires: it never collects, stores, or intermediates your credentials.
 Verify it yourself:
 
 ```bash
-grep -rnE "credentials\.json|find-generic-password|CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY|Authorization|api\.anthropic\.com" *.js *.mjs internal
+grep -rnE "credentials\.json|find-generic-password|CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY|Authorization|api\.anthropic\.com" *.js *.mjs internal src
 ```
 
 ### What this does not claim
