@@ -1,46 +1,52 @@
 /**
- * Accent for the Ultracode effort row in the model picker.
+ * Accent for the Ultracode effort, in both places the picker shows it.
  *
- * The row belongs to `dsh-client-ui-model-selection`, and an adapter can only
- * describe an effort as `{ id, name, description }` — there is no colour, icon
- * or emphasis in that contract. The rendered choice is a bare
- * `<button role="menuitemradio">` carrying no effort id, so its label is the
- * only handle, exactly as the settings-nav glyph in dsh-plugin-usage-meter
- * found its cell by label.
+ * An adapter can only describe an effort as `{ id, name, description }` — the
+ * contract carries no colour, icon or emphasis — and neither the dropdown row
+ * nor the composer trigger exposes the effort id in the DOM. The label text is
+ * therefore the only handle, exactly as the settings-nav glyph in
+ * dsh-plugin-usage-meter found its cell by label.
  *
- * This therefore decorates after render, on the same terms:
+ * Two targets, two tokens, both referenced as `var(...)` rather than resolved
+ * here, so a theme change repaints them without this plugin knowing:
  *
- * - it colours the label element itself, not the button: the label sits in its
- *   own span carrying the picker's own `color` rule, which beats a colour
- *   inherited from an ancestor, and the declaration is set `important` so the
- *   class cannot win on specificity either;
- * - it sets an inline style on the existing node rather than replacing any
- *   React-managed one, so React's tree is never invalidated underneath it;
- * - it uses `--dsw-alias-state-business-primary`, the shell's own accent token,
- *   so the row follows the active theme instead of hard-coding a colour;
- * - it marks what it touched and skips already-marked nodes, so re-renders are
- *   cheap and two installs cannot fight;
- * - every failure path leaves the row exactly as shipped, and disposal restores
- *   it.
+ * - the dropdown row takes `--dsw-alias-button-info-fill`, the solid accent;
+ * - the trigger's effort chip — the muted text beside the model name — takes
+ *   `--dsw-alias-button-info-hover`, the lighter one, since it sits against the
+ *   composer rather than inside a menu.
+ *
+ * Both are weighted one step above whatever they ship at, read from the
+ * computed style rather than hard-coded, so a restyle upstream keeps the
+ * relationship instead of the number.
+ *
+ * The decoration runs after render on the same terms as that nav glyph: inline
+ * styles on existing nodes rather than replaced ones, so React's tree is never
+ * invalidated; `important`, because the picker's own classes set both
+ * properties on these nodes; a marker so re-renders skip them and two installs
+ * cannot fight; and a disposer that restores every node it touched. Every
+ * failure path leaves the element exactly as shipped.
  *
  * Delete this file if the effort contract ever grows a presentation field, or
- * if the picker starts exposing the effort id on the element — either would be
- * a better handle than a label.
+ * if either surface starts exposing the effort id — both would be better
+ * handles than a label.
  */
 
 /** The label the adapter gives the Ultracode effort. */
 const ULTRACODE_LABEL = 'Ultracode'
 
-/** The shell's own accent token, so the row follows the active theme. */
-const ACCENT = 'var(--dsw-alias-state-business-primary)'
+/** Solid accent, for the row inside the dropdown. */
+const DROPDOWN_COLOR = 'var(--dsw-alias-button-info-fill)'
 
-/** One step above the 500 the picker's label ships at. */
-const WEIGHT = '600'
+/** Lighter accent, for the muted effort chip on the composer trigger. */
+const TRIGGER_COLOR = 'var(--dsw-alias-button-info-hover)'
 
-/** Marks a button this module coloured, so re-renders skip it. */
+/** How much heavier the accented text sits than its neighbours. */
+const WEIGHT_STEP = 100
+
+/** Marks a node this module styled, so re-renders skip it. */
 const PATCHED_FLAG = 'agentBridgeUltracode'
 
-/** What one decorated row needs to be restored to its shipped state. */
+/** What one decorated node needs to be restored to its shipped state. */
 interface Restore {
   readonly element: HTMLElement
   readonly color: string
@@ -56,13 +62,40 @@ function queryAll(selector: string): Element[] {
 }
 
 /**
+ * One step above what the element already renders at.
+ *
+ * The trigger chip inherits its weight rather than declaring one, so the
+ * shipped value is read from the computed style; anything unreadable falls back
+ * to the 500 the picker's own labels use.
+ */
+function heavierWeight(element: HTMLElement): string {
+  let shipped = 500
+  try {
+    const computed = Number.parseInt(window.getComputedStyle(element).fontWeight, 10)
+    if (Number.isFinite(computed) && computed > 0) shipped = computed
+  } catch {
+    // Fall back to the picker's own label weight.
+  }
+  return String(Math.min(900, shipped + WEIGHT_STEP))
+}
+
+function paint(element: HTMLElement, color: string, restores: Restore[]): void {
+  if (element.dataset[PATCHED_FLAG] !== undefined) return
+  const weight = heavierWeight(element)
+  restores.push({ element, color: element.style.color, fontWeight: element.style.fontWeight })
+  element.dataset[PATCHED_FLAG] = 'true'
+  // `important`, because the picker's own classes colour these nodes.
+  element.style.setProperty('color', color, 'important')
+  element.style.setProperty('font-weight', weight, 'important')
+}
+
+/**
  * The element holding a row's label: the innermost span whose text is exactly
  * the label, so the colour lands on the node whose own rule would otherwise
  * win, and a row whose name merely contains the word is left alone.
  */
 function labelElement(row: Element): HTMLElement | null {
-  const spans = [...row.querySelectorAll('span')]
-  for (const span of spans) {
+  for (const span of [...row.querySelectorAll('span')]) {
     if (span.querySelector('span') !== null) continue
     if ((span.textContent ?? '').trim() === ULTRACODE_LABEL) return span as HTMLElement
   }
@@ -70,26 +103,31 @@ function labelElement(row: Element): HTMLElement | null {
 }
 
 function decorate(restores: Restore[]): void {
+  // The dropdown row, while the menu is open.
   for (const row of queryAll('button[role="menuitemradio"]')) {
     try {
       const element = labelElement(row)
-      if (element === null || element.dataset[PATCHED_FLAG] !== undefined) continue
-
-      restores.push({ element, color: element.style.color, fontWeight: element.style.fontWeight })
-      element.dataset[PATCHED_FLAG] = 'true'
-      // `important`, because the picker's own class sets both of these on this
-      // node — the label ships at 500, so this is one step up, not a bold.
-      element.style.setProperty('color', ACCENT, 'important')
-      element.style.setProperty('font-weight', WEIGHT, 'important')
+      if (element !== null) paint(element, DROPDOWN_COLOR, restores)
     } catch {
       // A row mid-unmount: leave it as shipped.
+    }
+  }
+
+  // The effort chip on the composer trigger, whenever Ultracode is selected.
+  // The class is content-hashed, so match on the stable part of the name.
+  for (const chip of queryAll('[class*="triggerEffort"]')) {
+    try {
+      if ((chip.textContent ?? '').trim() !== ULTRACODE_LABEL) continue
+      paint(chip as HTMLElement, TRIGGER_COLOR, restores)
+    } catch {
+      // The trigger may be re-rendering: leave it as shipped.
     }
   }
 }
 
 /**
- * Start accenting the row, and return a disposer that restores every row it
- * touched.
+ * Start accenting both surfaces, and return a disposer that restores every node
+ * it touched.
  */
 export function installEffortAccent(): () => void {
   const restores: Restore[] = []
@@ -100,7 +138,8 @@ export function installEffortAccent(): () => void {
   let observer: MutationObserver | undefined
   try {
     if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined' && document.body !== null) {
-      // The picker mounts on open, so the row does not exist at install time.
+      // The menu mounts on open and the trigger re-renders on selection, so
+      // neither node exists at install time.
       observer = new MutationObserver(run)
       observer.observe(document.body, { childList: true, subtree: true })
     }
