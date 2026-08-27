@@ -369,6 +369,13 @@ export class ClaudeSdkClient extends EventEmitter {
       model: message.model ?? session.config?.model,
       ...(effortOf(message, session) !== undefined ? { effort: effortOf(message, session) } : {}),
       permissionMode: sdkPermissionMode(message),
+      // Ask for thinking summaries. This is a request-side setting, not a
+      // display one: with it on, models that expose their reasoning return
+      // more of it (measurably so on Haiku). Passed inline rather than read
+      // from ~/.claude, so it cannot reintroduce the user's own config.
+      // Models that withhold reasoning - Opus 5 returns signed, empty thinking
+      // blocks - are unaffected either way.
+      ...(message.thinkingSummaries === false ? {} : { settings: { showThinkingSummaries: true } }),
       // DSH owns the toolset. Without this, Claude Code's built-ins stay in
       // context and win — `allowedTools` only pre-approves, it does not scope.
       tools: [],

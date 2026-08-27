@@ -7,9 +7,10 @@ import { scanOnlyTelemetryControl } from "./telemetry-control.js";
 export const CLAUDE_PROVIDER = "claude";
 
 export class ClaudeDshAdapter extends LlmAdapter {
-  constructor({ runtime, ready, linkStore = null, logger = console, telemetry = scanOnlyTelemetryControl() }) {
+  constructor({ runtime, ready, linkStore = null, logger = console, telemetry = scanOnlyTelemetryControl(), thinkingSummaries = true }) {
     super();
     this.telemetry = telemetry;
+    this.thinkingSummaries = thinkingSummaries;
     this.runtime = runtime;
     this.ready = ready;
     this.logger = logger;
@@ -103,6 +104,7 @@ export class ClaudeDshAdapter extends LlmAdapter {
       // settings, CLAUDE.md, or the claude_code system prompt on top of it.
       settingSources: [],
       systemPrompt: undefined,
+      thinkingSummaries: this.thinkingSummaries,
     };
     this.settings.set(key, config);
     return config;

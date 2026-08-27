@@ -53,6 +53,7 @@ export function createDshClaudePlugin(ctx, config = {}) {
       });
       const adapter = new ClaudeDshAdapter({
         runtime, ready: runtime.whenReady(), telemetry,
+        thinkingSummaries: config.thinkingSummaries,
         linkStore: new ClaudeLinkStore(resolveLinkPath(config.linkPath)), logger: ctx.logger,
       });
       defer(ctx.llm.registerAdapter([CLAUDE_PROVIDER], adapter));

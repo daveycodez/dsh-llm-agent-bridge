@@ -81,6 +81,24 @@ you interact with it or while a turn runs, never on a timer. The underlying SDK
 method is explicitly experimental, so a failure to read leaves the ring hidden
 rather than failing anything.
 
+## Thinking
+
+Turns request `showThinkingSummaries` inline, so models that expose their
+reasoning return more of it — Haiku's visible reasoning grows measurably with it
+on. It is passed as an inline `settings` object rather than read from
+`~/.claude/settings.json`, which stays unloaded (`settingSources: []`), so this
+cannot reintroduce your own Claude Code configuration into a DSH turn. Set
+`thinkingSummaries: false` on the plugin row to opt out.
+
+What this cannot do is reveal reasoning a model withholds. Opus 5 returns
+thinking blocks that carry a signature and a token count but no text, on every
+request-side setting tried — `showThinkingSummaries`, `thinking: adaptive`, and
+`thinking: { type: 'enabled', budgetTokens }` all produce zero characters and
+identical thinking-token counts. Nothing renders because nothing arrives; the
+`reasoningTokens` figure in the usage counter is the honest signal that the model
+thought. Claude Code's own `verbose` setting and transcript mode change how a
+client draws blocks it already received, so neither applies here.
+
 ## Switching models mid-session
 
 The Claude session only knows the turns it answered. When it is created, or when
