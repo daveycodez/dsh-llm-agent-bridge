@@ -83,21 +83,25 @@ rather than failing anything.
 
 ## Thinking
 
-Turns request `showThinkingSummaries` inline, so models that expose their
-reasoning return more of it — Haiku's visible reasoning grows measurably with it
-on. It is passed as an inline `settings` object rather than read from
-`~/.claude/settings.json`, which stays unloaded (`settingSources: []`), so this
-cannot reintroduce your own Claude Code configuration into a DSH turn. Set
-`thinkingSummaries: false` on the plugin row to opt out.
+Turns request `thinking: { type: "adaptive", display: "summarized" }`. Without
+that `display`, the models stream thinking blocks whose text is empty — a
+signature and a token count, nothing to render — which is why reasoning appeared
+to be missing for every model except Haiku. With it:
 
-What this cannot do is reveal reasoning a model withholds. Opus 5 returns
-thinking blocks that carry a signature and a token count but no text, on every
-request-side setting tried — `showThinkingSummaries`, `thinking: adaptive`, and
-`thinking: { type: 'enabled', budgetTokens }` all produce zero characters and
-identical thinking-token counts. Nothing renders because nothing arrives; the
-`reasoningTokens` figure in the usage counter is the honest signal that the model
-thought. Claude Code's own `verbose` setting and transcript mode change how a
-client draws blocks it already received, so neither applies here.
+| model | reasoning text without it | with it |
+|---|---|---|
+| Opus 5 | 0 chars | 140 |
+| Sonnet 5 | 0 chars | 1,178 |
+| Haiku 4.5 | ~340 | 680 |
+
+It composes with the effort selector rather than replacing it: effort still
+decides how much thinking happens — Sonnet at `low` does none at all, at `high`
+it thinks and the summary comes through — while `display` decides whether you
+can read it. Adaptive thinking is genuinely variable, so a given turn may think
+little or not at all; `reasoningTokens` in the usage counter tells you which.
+
+Set `thinkingSummaries: false` on the plugin row to leave the SDK's own default
+alone.
 
 ## Switching models mid-session
 

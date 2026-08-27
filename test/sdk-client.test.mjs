@@ -378,7 +378,7 @@ test("context capacity is learned from result messages and defaulted until then"
   assert.equal(client.contextWindowFor("haiku", "claude-haiku-4-5-20251001"), 200000);
 });
 
-test("thinking summaries are requested inline, never read from the user's config", async () => {
+test("readable reasoning is requested, and opting out asks for nothing", async () => {
   let captured = null;
   const sdk = {
     query(params) { captured = params.options; return Object.assign((async function* () {})(), { close() {}, interrupt: async () => {} }); },
@@ -387,9 +387,11 @@ test("thinking summaries are requested inline, never read from the user's config
   const session = await client.createSession({ sessionId: "s-think" });
 
   await client.sendMessage(session.id, { text: "hi" });
-  assert.deepEqual(captured.settings, { showThinkingSummaries: true }, "models that expose reasoning return more of it with this on");
-  assert.deepEqual(captured.settingSources, [], "and it must not come from ~/.claude");
+  // Without display: "summarized" the thinking blocks arrive with empty text —
+  // a signature and a token count, nothing to render.
+  assert.deepEqual(captured.thinking, { type: "adaptive", display: "summarized" });
+  assert.deepEqual(captured.settingSources, [], "and none of it comes from ~/.claude");
 
   await client.sendMessage(session.id, { text: "hi", thinkingSummaries: false });
-  assert.equal(captured.settings, undefined, "opting out sends no settings at all");
+  assert.equal(captured.thinking, undefined, "opting out leaves the SDK's own default alone");
 });
