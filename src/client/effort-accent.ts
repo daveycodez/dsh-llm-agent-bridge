@@ -34,6 +34,9 @@ const ULTRACODE_LABEL = 'Ultracode'
 /** The shell's own accent token, so the row follows the active theme. */
 const ACCENT = 'var(--dsw-alias-state-business-primary)'
 
+/** One step above the 500 the picker's label ships at. */
+const WEIGHT = '600'
+
 /** Marks a button this module coloured, so re-renders skip it. */
 const PATCHED_FLAG = 'agentBridgeUltracode'
 
@@ -41,6 +44,7 @@ const PATCHED_FLAG = 'agentBridgeUltracode'
 interface Restore {
   readonly element: HTMLElement
   readonly color: string
+  readonly fontWeight: string
 }
 
 function queryAll(selector: string): Element[] {
@@ -71,10 +75,12 @@ function decorate(restores: Restore[]): void {
       const element = labelElement(row)
       if (element === null || element.dataset[PATCHED_FLAG] !== undefined) continue
 
-      restores.push({ element, color: element.style.color })
+      restores.push({ element, color: element.style.color, fontWeight: element.style.fontWeight })
       element.dataset[PATCHED_FLAG] = 'true'
-      // `important`, because the picker's own class colours this node.
+      // `important`, because the picker's own class sets both of these on this
+      // node — the label ships at 500, so this is one step up, not a bold.
       element.style.setProperty('color', ACCENT, 'important')
+      element.style.setProperty('font-weight', WEIGHT, 'important')
     } catch {
       // A row mid-unmount: leave it as shipped.
     }
@@ -112,7 +118,9 @@ export function installEffortAccent(): () => void {
       try {
         delete entry.element.dataset[PATCHED_FLAG]
         entry.element.style.removeProperty('color')
+        entry.element.style.removeProperty('font-weight')
         if (entry.color) entry.element.style.color = entry.color
+        if (entry.fontWeight) entry.element.style.fontWeight = entry.fontWeight
       } catch {
         // The node may already be gone with the closed picker.
       }
