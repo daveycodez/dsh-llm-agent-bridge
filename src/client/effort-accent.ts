@@ -16,8 +16,8 @@
  *   class cannot win on specificity either;
  * - it sets an inline style on the existing node rather than replacing any
  *   React-managed one, so React's tree is never invalidated underneath it;
- * - it uses `--dsw-alias-brand-primary`, the shell's own accent token, so the
- *   row follows the active theme instead of hard-coding a colour;
+ * - it uses `--dsw-alias-state-business-primary`, the shell's own accent token,
+ *   so the row follows the active theme instead of hard-coding a colour;
  * - it marks what it touched and skips already-marked nodes, so re-renders are
  *   cheap and two installs cannot fight;
  * - every failure path leaves the row exactly as shipped, and disposal restores
@@ -31,8 +31,8 @@
 /** The label the adapter gives the Ultracode effort. */
 const ULTRACODE_LABEL = 'Ultracode'
 
-/** The shell's accent token, the same one its primary affordances use. */
-const ACCENT = 'var(--dsw-alias-brand-primary)'
+/** The shell's own accent token, so the row follows the active theme. */
+const ACCENT = 'var(--dsw-alias-state-business-primary)'
 
 /** Marks a button this module coloured, so re-renders skip it. */
 const PATCHED_FLAG = 'agentBridgeUltracode'
@@ -41,7 +41,6 @@ const PATCHED_FLAG = 'agentBridgeUltracode'
 interface Restore {
   readonly element: HTMLElement
   readonly color: string
-  readonly fontWeight: string
 }
 
 function queryAll(selector: string): Element[] {
@@ -72,11 +71,10 @@ function decorate(restores: Restore[]): void {
       const element = labelElement(row)
       if (element === null || element.dataset[PATCHED_FLAG] !== undefined) continue
 
-      restores.push({ element, color: element.style.color, fontWeight: element.style.fontWeight })
+      restores.push({ element, color: element.style.color })
       element.dataset[PATCHED_FLAG] = 'true'
       // `important`, because the picker's own class colours this node.
       element.style.setProperty('color', ACCENT, 'important')
-      element.style.setProperty('font-weight', '600', 'important')
     } catch {
       // A row mid-unmount: leave it as shipped.
     }
@@ -114,9 +112,7 @@ export function installEffortAccent(): () => void {
       try {
         delete entry.element.dataset[PATCHED_FLAG]
         entry.element.style.removeProperty('color')
-        entry.element.style.removeProperty('font-weight')
         if (entry.color) entry.element.style.color = entry.color
-        if (entry.fontWeight) entry.element.style.fontWeight = entry.fontWeight
       } catch {
         // The node may already be gone with the closed picker.
       }
