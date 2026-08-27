@@ -10,6 +10,7 @@
  * no other plugin needs to be installed for the ring to work.
  */
 
+import { installEffortAccent } from './effort-accent.js'
 import { createUsageStore } from './usage.js'
 import { UsageMeter, type ModelGate } from './UsageMeter.js'
 
@@ -64,6 +65,10 @@ export function apply(ctx: {
   // The client-runtime Context merge types `connection` as the host handle; in
   // the browser shell the same key holds the full client ConnectionHandle.
   const connection = ctx.get('connection') as ConnectionHandle
+
+  // The picker cannot be told an effort's colour, so the Ultracode row is
+  // accented after render; see effort-accent.ts for why and how it restores.
+  ctx.effect(() => installEffortAccent(), 'dsh-llm-agent-bridge: ultracode effort accent')
 
   // One store for every session: the slot renders per session, and a fetcher
   // per component would multiply the request rate against a reading that costs
