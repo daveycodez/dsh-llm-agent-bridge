@@ -177,10 +177,14 @@ export function installEffortAccent(): () => void {
   let observer: MutationObserver | undefined
   try {
     if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined' && document.body !== null) {
-      // The menu mounts on open and the trigger re-renders on selection, so
-      // neither node exists at install time.
+      // The menu mounts on open, so the row does not exist at install time —
+      // that is the childList half. `characterData` is the load-bearing half:
+      // selecting an effort does not remount the trigger's chip, it rewrites
+      // the text inside the span React already has, which childList alone never
+      // reports. Without it the accent only caught up when some unrelated
+      // mutation happened to fire, which reads as a lag until you click away.
       observer = new MutationObserver(run)
-      observer.observe(document.body, { childList: true, subtree: true })
+      observer.observe(document.body, { childList: true, subtree: true, characterData: true })
     }
   } catch {
     observer = undefined
