@@ -10,8 +10,12 @@
  *
  * This therefore decorates after render, on the same terms:
  *
- * - it sets an inline colour on the existing button rather than replacing any
- *   React-managed node, so React's tree is never invalidated underneath it;
+ * - it colours the label element itself, not the button: the label sits in its
+ *   own span carrying the picker's own `color` rule, which beats a colour
+ *   inherited from an ancestor, and the declaration is set `important` so the
+ *   class cannot win on specificity either;
+ * - it sets an inline style on the existing node rather than replacing any
+ *   React-managed one, so React's tree is never invalidated underneath it;
  * - it uses `--dsw-alias-brand-primary`, the shell's own accent token, so the
  *   row follows the active theme instead of hard-coding a colour;
  * - it marks what it touched and skips already-marked nodes, so re-renders are
@@ -48,19 +52,31 @@ function queryAll(selector: string): Element[] {
   }
 }
 
+/**
+ * The element holding a row's label: the innermost span whose text is exactly
+ * the label, so the colour lands on the node whose own rule would otherwise
+ * win, and a row whose name merely contains the word is left alone.
+ */
+function labelElement(row: Element): HTMLElement | null {
+  const spans = [...row.querySelectorAll('span')]
+  for (const span of spans) {
+    if (span.querySelector('span') !== null) continue
+    if ((span.textContent ?? '').trim() === ULTRACODE_LABEL) return span as HTMLElement
+  }
+  return null
+}
+
 function decorate(restores: Restore[]): void {
-  for (const node of queryAll('button[role="menuitemradio"]')) {
-    const element = node as HTMLElement
+  for (const row of queryAll('button[role="menuitemradio"]')) {
     try {
-      if (element.dataset[PATCHED_FLAG] !== undefined) continue
-      // The label is the handle; match it exactly so a model or effort whose
-      // name merely contains the word is left alone.
-      if ((element.textContent ?? '').trim() !== ULTRACODE_LABEL) continue
+      const element = labelElement(row)
+      if (element === null || element.dataset[PATCHED_FLAG] !== undefined) continue
 
       restores.push({ element, color: element.style.color, fontWeight: element.style.fontWeight })
       element.dataset[PATCHED_FLAG] = 'true'
-      element.style.color = ACCENT
-      element.style.fontWeight = '600'
+      // `important`, because the picker's own class colours this node.
+      element.style.setProperty('color', ACCENT, 'important')
+      element.style.setProperty('font-weight', '600', 'important')
     } catch {
       // A row mid-unmount: leave it as shipped.
     }
@@ -97,8 +113,10 @@ export function installEffortAccent(): () => void {
     for (const entry of restores) {
       try {
         delete entry.element.dataset[PATCHED_FLAG]
-        entry.element.style.color = entry.color
-        entry.element.style.fontWeight = entry.fontWeight
+        entry.element.style.removeProperty('color')
+        entry.element.style.removeProperty('font-weight')
+        if (entry.color) entry.element.style.color = entry.color
+        if (entry.fontWeight) entry.element.style.fontWeight = entry.fontWeight
       } catch {
         // The node may already be gone with the closed picker.
       }
