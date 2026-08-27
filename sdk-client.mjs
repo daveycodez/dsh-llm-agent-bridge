@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { z } from "zod";
+import { ULTRACODE_BASE_EFFORT, ULTRACODE_EFFORT, orchestrationPolicy, withOrchestrationPolicy } from "./orchestration.js";
 import { planUsageFrom } from "./plan-usage.js";
 
 /**
@@ -19,6 +20,11 @@ const DEFAULT_MODELS = [
 
 function reasoningEfforts(levels = ["low", "medium", "high", "xhigh", "max"]) {
   return levels.map(reasoningEffort => ({ reasoningEffort }));
+}
+
+/** Ultracode rides on xhigh, so it is offered only where xhigh is. */
+function withUltracode(levels) {
+  return levels.includes(ULTRACODE_BASE_EFFORT) ? [...levels, ULTRACODE_EFFORT] : levels;
 }
 
 function stripTag(value) {
@@ -67,8 +73,9 @@ function toRuntimeModels(rows) {
       displayName: modelName(row),
       isDefault: recommended !== undefined && row.resolvedModel === recommended,
       // No default effort is invented: ModelInfo reports none, so leaving it
-      // unset means Claude Code applies its own.
-      ...(levels.length ? { supportedReasoningEfforts: reasoningEfforts(levels) } : {}),
+      // unset means Claude Code applies its own. Ultracode is this plugin's own
+      // row, offered only where xhigh exists because that is what it selects.
+      ...(levels.length ? { supportedReasoningEfforts: reasoningEfforts(withUltracode(levels)) } : {}),
     });
   }
   if (models.length && !models.some(model => model.isDefault)) models[0].isDefault = true;
@@ -376,6 +383,11 @@ export class ClaudeSdkClient extends EventEmitter {
       // happens: Sonnet at low thinks not at all, at high it thinks and the
       // summary comes through.
       ...(message.thinkingSummaries === false ? {} : { thinking: { type: "adaptive", display: "summarized" } }),
+      // Ultracode's own half: xhigh effort (selected above) plus the standing
+      // orchestration posture. Claude Code's Workflow tool stays absent — the
+      // harness's own workflow tool is what the prompt names, so subagent work
+      // runs through the harness and lands in its trajectory.
+      ...(isUltracode(message, session) ? { settings: { ultracode: true, enableWorkflows: true } } : {}),
       // DSH owns the toolset. Without this, Claude Code's built-ins stay in
       // context and win — `allowedTools` only pre-approves, it does not scope.
       tools: [],
@@ -383,7 +395,10 @@ export class ClaudeSdkClient extends EventEmitter {
       // a caller that forgets must not silently mount the user's own Claude
       // Code config — CLAUDE.md, skills, hooks — on top of the harness prompt.
       settingSources: message.settingSources ?? session.config?.settingSources ?? [],
-      systemPrompt: message.systemPrompt ?? session.config?.systemPrompt,
+      systemPrompt: withOrchestrationPolicy(
+        message.systemPrompt ?? session.config?.systemPrompt,
+        orchestrationPolicy(message.dshTools, isUltracode(message, session)),
+      ),
       pathToClaudeCodeExecutable: this.pathToClaudeCodeExecutable,
       includePartialMessages: true,
       ...(session.created ? { resume: session.id } : { sessionId: session.id }),
@@ -633,9 +648,19 @@ function resultError(message) {
   return new Error(message.errors?.join("\n") || message.subtype || "Claude SDK turn failed");
 }
 
-/** An unset effort must stay unset, so Claude Code applies its own default. */
+/**
+ * An unset effort must stay unset, so Claude Code applies its own default.
+ * Ultracode is this plugin's own row and is not an SDK effort: it selects
+ * xhigh, and its standing-orchestration half is carried in the prompt.
+ */
 function effortOf(message, session) {
-  return message.effort ?? session.config?.effort ?? undefined;
+  const effort = message.effort ?? session.config?.effort ?? undefined;
+  return effort === ULTRACODE_EFFORT ? ULTRACODE_BASE_EFFORT : effort;
+}
+
+/** Whether this turn runs under the Ultracode effort. */
+function isUltracode(message, session) {
+  return (message.effort ?? session.config?.effort) === ULTRACODE_EFFORT;
 }
 
 function sdkPermissionMode(message) {

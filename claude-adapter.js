@@ -1,5 +1,6 @@
 import { LlmAdapter } from "@deepseek-ai/dsh-llm";
 import { debugLog } from "./debug.js";
+import { ULTRACODE_EFFORT } from "./orchestration.js";
 import { dshToolResult } from "./sdk-client.mjs";
 import { scanOnlyTelemetryControl } from "./telemetry-control.js";
 
@@ -658,7 +659,9 @@ function humanize(value) {
 }
 
 function reasoningEffortName(value) {
-  return String(value) === "xhigh" ? "Extra high" : humanize(value);
+  if (String(value) === "xhigh") return "Extra high";
+  if (String(value) === ULTRACODE_EFFORT) return "Ultracode";
+  return humanize(value);
 }
 
 /**
