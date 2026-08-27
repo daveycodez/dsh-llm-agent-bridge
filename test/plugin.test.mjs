@@ -97,3 +97,49 @@ test("a parked call resolves through the fallback wrapper, not the stub it inher
   );
   assert.deepEqual((await pending).content, [{ type: "text", text: "ok" }]);
 });
+
+test("the DSH half activates against a cordis-shaped context and serves the channel", async () => {
+  const { createDshClaudePlugin, AGENT_BRIDGE_CHANNEL } = await import("../dsh-plugin.js");
+
+  const handlers = new Map();
+  const disposed = [];
+  const connection = {
+    rpc: {
+      handle(channel, handler, options) {
+        handlers.set(channel, { handler, options });
+        return () => handlers.delete(channel);
+      },
+    },
+  };
+  // Shaped like cordis: inject() returns a fiber, not a disposer — the mistake
+  // that took a release down, because the host asserts cleanups are callable.
+  const ctx = {
+    logger: { warn() {}, error() {}, info() {} },
+    llm: { registerAdapter: () => () => {} },
+    agents: { list: () => [], get: () => null },
+    on: () => () => {},
+    get: name => (name === "connection" ? connection : undefined),
+    inject(_names, callback) {
+      callback({ get: ctx.get, effect: (body, _label) => { disposed.push(body()); } });
+      return { dispose() {} };
+    },
+  };
+
+  const host = new PluginHost();
+  const client = new FakeClaudeClient();
+  await host.activate([
+    createClaudeExecutionPlugin({ client, cwd: "/workspace" }),
+    createDshClaudePlugin(ctx, {}),
+  ]);
+
+  const served = handlers.get(AGENT_BRIDGE_CHANNEL);
+  assert.ok(served, "the browser half has no other way to read plan usage");
+  assert.equal(served.options.authority, "loopback", "the channel answers the local UI only");
+
+  assert.deepEqual(await served.handler("usage", {}), { ok: true, value: { supported: false } });
+  const unknown = await served.handler("nope", {});
+  assert.equal(unknown.ok, false);
+  assert.match(unknown.error.message, /unknown .* endpoint/);
+
+  await host.dispose();
+});
