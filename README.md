@@ -51,7 +51,7 @@ in the trajectory and keeps the conversation history shared between providers.
 ## Install
 
 ```bash
-npx @deepseek-ai/dsh plugin --profile web add github:daveycodez/dsh-llm-agent-bridge#main
+npx @deepseek-ai/dsh plugin --profile web add github:daveycodez/dsh-llm-agent-bridge
 npx @deepseek-ai/dsh web
 ```
 
